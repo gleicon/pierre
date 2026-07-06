@@ -1,0 +1,47 @@
+[package]
+name = "pierre"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pierre"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pierre"
+path = "src/main.rs"
+
+[dependencies]
+edgestore = { path = "../edgestore/edgestore" }
+edgestore-tokio = { path = "../edgestore/edgestore-tokio", features = ["tier"] }
+edgestore-repl = { path = "../edgestore/edgestore-repl" }
+edgestore-tier = { path = "../edgestore/edgestore-tier" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-util", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+axum = "0.8"
+hyperloglogplus = "0.4.1"
+sketches-ddsketch = { version = "0.4.0", features = ["use_serde"] }
+prost = "0.13"
+prost-types = "0.13"
+snap = "1"
+rand = "0.8"
+
+[build-dependencies]
+prost-build = "0.13"
+
+[features]
+default = []
+s3 = ["edgestore-repl/s3"]
+
+[[example]]
+name = "bench_s3_localstack"
+required-features = ["s3"]
+
+[dev-dependencies]
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }

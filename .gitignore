@@ -1,0 +1,5 @@
+/target
+/pierre-data
+/tests/e2e/.tmp
+.claude/
+.DS_Store

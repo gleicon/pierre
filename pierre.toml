@@ -1,0 +1,74 @@
+# pierre.toml — declarative, no DSL
+
+data_dir = "./pierre-data"
+native_listen_addr = "127.0.0.1:4317"
+loki_listen_addr = "127.0.0.1:3100"
+query_listen_addr = "127.0.0.1:3101"
+fields = ["level", "status", "trace_id", "latency_ms", "path"]
+rollup_minute_ttl_secs = 3600
+hot_to_warm_flush_interval_secs = 300
+archive_interval_secs = 300
+cohort_window_secs = 3600
+
+# 5 minutes, not edgestore's inherited 1-hour assumption — measured indexing
+# throughput collapses ~14x between 10K and 100K documents accumulated in one
+# namespace (SPEC.md #L2), because flush() persists the in-memory BM25 index but
+# never clears it. A short bucket window bounds that growth.
+textindex_bucket_duration_secs = 300
+textindex_flush_interval_secs = 5
+
+# Backup destination for warm segments — backup/DR only, not cost-reducing tiering
+# (see SPEC.md #L1). Omit [backup] entirely for the local-disk default under
+# {data_dir}/_archive — every deployment gets real archival with no external
+# dependency. Uncomment to use S3 instead (requires building with --features s3):
+#
+# [backup]
+# backend = "s3"
+# bucket = "my-pierre-logs"
+# prefix = "prod/"
+
+# Local segment pruning (DECISIONS.md "Local segment pruning") — deletes a segment's
+# local files once it's been archived for at least this long, reclaiming local disk.
+# Safe because Storage::range()/prefix() read through to archived data (edgestore
+# 1.1.4). Commented out by default: Pierre archives forever without ever pruning
+# locally until this is set.
+# local_retention_secs = 86400
+local_prune_interval_secs = 300
+
+# Strip a segment's embedded BM25 records from the *local* copy right after it's
+# archived (finer-grained than waiting for full local pruning above; the archived
+# copy is untouched). Off by default.
+#
+# KNOWN GAP: stripping correctly rewrites the segment, but a restart currently
+# resurrects the stripped data anyway via WAL replay (edgestore's WAL rotation is
+# size-based, unrelated to flush/strip events) — see tests/text_index_stripping.rs.
+# Don't enable this expecting durable disk savings until that's fixed upstream.
+strip_text_index_after_archive = false
+
+# Static bearer tokens for the HTTP endpoints (Loki push, Loki query_range, native
+# query API) — checked as `Authorization: Bearer <token>`, matching what Promtail/
+# Alloy/Vector already send by default. Empty (the default) means no auth at all.
+# This is NOT federated auth — no rotation, no per-client scoping, no expiry. Fine
+# for small/trusted-network/test deployments; ask if you need a real secret-manager
+# integration.
+# auth_tokens = ["change-me"]
+
+[[rollup]]
+field = "level"
+kind = "exact"
+
+[[rollup]]
+field = "status"
+kind = "exact"
+
+[[rollup]]
+field = "trace_id"
+kind = "hll"
+
+[[rollup]]
+field = "path"
+kind = "topk"
+
+[[rollup]]
+field = "latency_ms"
+kind = "ddsketch"
