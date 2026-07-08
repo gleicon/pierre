@@ -4,12 +4,12 @@ use std::sync::Arc;
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::middleware;
 use axum::routing::{get, post};
-use axum::{Extension, Json, Router};
+use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthTokens;
+use crate::listener::parse_range;
 use crate::record::WireRecord;
 use crate::rollup::RollupHandle;
 use crate::storage::Storage;
@@ -44,12 +44,11 @@ pub fn router(
     textindex: Option<TextIndexHandle>,
     auth_tokens: AuthTokens,
 ) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/loki/api/v1/push", post(push_handler))
         .route("/loki/api/v1/query_range", get(query_range_handler))
-        .with_state(AppState { storage, allowed_fields, rollup, textindex })
-        .layer(middleware::from_fn(crate::auth::require_bearer_token))
-        .layer(Extension(auth_tokens))
+        .with_state(AppState { storage, allowed_fields, rollup, textindex });
+    crate::auth::layer(router, auth_tokens)
 }
 
 pub async fn serve(
@@ -142,16 +141,7 @@ async fn query_range_handler(
 ) -> Result<Json<LokiQueryResponse>, (StatusCode, String)> {
     let query_str = params.get("query").ok_or((StatusCode::BAD_REQUEST, "missing `query` param".to_string()))?;
     let parsed = crate::logql::parse(query_str).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let start_ns: i64 = params
-        .get("start")
-        .ok_or((StatusCode::BAD_REQUEST, "missing `start` param".to_string()))?
-        .parse()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid `start` param".to_string()))?;
-    let end_ns: i64 = params
-        .get("end")
-        .ok_or((StatusCode::BAD_REQUEST, "missing `end` param".to_string()))?
-        .parse()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid `end` param".to_string()))?;
+    let (start_ns, end_ns) = parse_range(&params)?;
 
     let records = crate::query::select(&state.storage, start_ns, end_ns, &parsed.selector)
         .await

@@ -214,6 +214,15 @@ impl Storage {
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
     }
+
+    /// A handle that resolves the instant any local segment is flushed (explicit
+    /// `flush_to_segments` or edgestore's own auto-flush-on-put). The `backup`
+    /// worker races this against its archive-interval tick so a freshly-flushed
+    /// segment gets archived immediately instead of waiting up to the full
+    /// interval — see `backup::spawn`.
+    pub fn flush_notify(&self) -> std::sync::Arc<tokio::sync::Notify> {
+        self.engine.flush_notify()
+    }
 }
 
 /// `suffix` is either fresh per-record randomness (real record keys, see `commit()`)

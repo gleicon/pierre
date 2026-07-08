@@ -177,10 +177,27 @@ async fn ddsketch_rollup_estimates_p99_through_the_full_ingest_path() {
 
     tokio::time::sleep(bucket_duration * 3).await;
 
+    // Ingesting 1000 sequential durable writes can outlast one 100ms bucket window
+    // under load, splitting samples across more than one minute bucket — reading
+    // `all[0]` directly (the previous approach) would then see only a partial
+    // sample and flake. Merge every minute-tier bucket for the field instead of
+    // assuming exactly one bucket exists (not `aggregate::merged_sketch`: its
+    // start_ns/end_ns select which *tier* to read by query span, not "all time" —
+    // this test wants the minute tier specifically, regardless of span).
     let all = storage.prefix(ROLLUP_MINUTE_NS, &[]).await.unwrap();
-    assert!(!all.is_empty());
-
-    let sketch = FieldSketch::from_bytes(&all[0].1).unwrap();
+    let mut sketch: Option<FieldSketch> = None;
+    for (key, value) in all {
+        let Some((_, field)) = pierre::rollup::worker::decode_rollup_key(&key) else { continue };
+        if field != "latency_ms" {
+            continue;
+        }
+        let bucket = FieldSketch::from_bytes(&value).unwrap();
+        match &mut sketch {
+            Some(existing) => existing.merge_from(&bucket).unwrap(),
+            None => sketch = Some(bucket),
+        }
+    }
+    let sketch = sketch.expect("at least one minute bucket must exist for latency_ms");
     let p99 = sketch.quantile(0.99).unwrap();
     assert!((980.0..1000.0).contains(&p99), "p99 estimate {p99} should be within ~1% of the true p99 (990)");
 }

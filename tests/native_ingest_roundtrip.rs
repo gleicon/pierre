@@ -76,6 +76,85 @@ async fn native_write_is_durable_and_immediately_readable() {
     assert!(none2.is_empty());
 }
 
+/// A client-supplied length prefix claiming an oversized frame must be rejected
+/// *before* the server allocates a buffer for it — an unbounded allocation on an
+/// unauthenticated protocol is a memory-exhaustion DoS (found via `/ds-security-review`).
+/// This test never actually sends the claimed bytes; if the server allocated first
+/// and only rejected after trying to read the (never-sent) payload, this test would
+/// hang instead of completing quickly.
+#[tokio::test]
+async fn oversized_length_prefix_is_rejected_before_allocating() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
+    let allowed_fields = Arc::new(vec![]);
+
+    let listener_socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener_socket.local_addr().unwrap().to_string();
+    drop(listener_socket);
+
+    let addr_for_server = addr.clone();
+    tokio::spawn(async move {
+        listener::native::serve(&addr_for_server, storage, allowed_fields, None, None).await.unwrap();
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let mut stream = TcpStream::connect(&addr).await.unwrap();
+    // Claim a frame just over u32::MAX / 4 — comfortably past any real batch, and
+    // this connection never sends a matching payload.
+    stream.write_all(&(2_000_000_000u32).to_be_bytes()).await.unwrap();
+
+    // The server must respond (nack) or close the connection quickly, without
+    // waiting to read bytes that were never sent.
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        let mut buf = [0u8; 1];
+        stream.read(&mut buf).await
+    })
+    .await;
+
+    match result {
+        Ok(Ok(0)) => {}       // connection closed — acceptable rejection
+        Ok(Ok(_)) => {}       // nack byte received — acceptable rejection
+        Ok(Err(_)) => {}      // connection reset — acceptable rejection
+        Err(_) => panic!("server did not reject the oversized frame within 2s — it may be blocked trying to allocate/read it"),
+    }
+}
+
+/// Boundary check for the guard above: a length prefix of exactly `MAX_FRAME_BYTES`
+/// (16MB in `listener/native.rs`, not exported — mirrored here) must *not* be
+/// rejected outright the way one-byte-over is. We never send the payload, so a
+/// server that accepted the length sits waiting to read it instead of nacking —
+/// proven by the absence of any response within a short window.
+#[tokio::test]
+async fn frame_length_prefix_exactly_at_the_limit_is_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
+    let allowed_fields = Arc::new(vec![]);
+
+    let listener_socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener_socket.local_addr().unwrap().to_string();
+    drop(listener_socket);
+
+    let addr_for_server = addr.clone();
+    tokio::spawn(async move {
+        let _ = listener::native::serve(&addr_for_server, storage, allowed_fields, None, None).await;
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let mut stream = TcpStream::connect(&addr).await.unwrap();
+    stream.write_all(&(16 * 1024 * 1024u32).to_be_bytes()).await.unwrap();
+
+    let result = tokio::time::timeout(Duration::from_millis(300), async {
+        let mut buf = [0u8; 1];
+        stream.read(&mut buf).await
+    })
+    .await;
+
+    assert!(
+        result.is_err(),
+        "a frame length exactly at the limit must not be rejected outright — server should be waiting to read the (unsent) payload, not nacking early"
+    );
+}
+
 #[tokio::test]
 async fn unconfigured_fields_are_dropped_at_ingest() {
     let dir = tempfile::tempdir().unwrap();

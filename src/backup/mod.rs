@@ -126,6 +126,12 @@ async fn save_archived_meta(data_dir: &Path, records: &[ArchivedSegmentRecord]) 
 /// their own thread (DECISIONS.md "Shared lifecycle/retention pattern") — the
 /// due-for-pruning check itself (`pierre::retention::is_due`) is a pure function,
 /// independent of any thread; this loop is just where it's driven from.
+///
+/// The archive pass also races against `storage.flush_notify()` (edgestore 1.3.0's
+/// `with_on_segment_flushed`, wired through `AsyncTieredEngine`) alongside its own
+/// interval tick, so a segment that just landed — via this worker's own flush_tick
+/// or edgestore's auto-flush-on-put once `memtable_max_bytes` is exceeded — gets
+/// archived immediately instead of sitting local-only for up to `archive_interval`.
 pub async fn spawn(
     storage: Arc<Storage>,
     flush_interval: Duration,
@@ -149,6 +155,8 @@ pub async fn spawn(
         storage.register_archived(restored).await;
     }
 
+    let flush_notify = storage.flush_notify();
+
     tokio::spawn(async move {
         let mut flush_tick = tokio::time::interval(flush_interval);
         let mut archive_tick = tokio::time::interval(archive_interval);
@@ -169,6 +177,14 @@ pub async fn spawn(
                 _ = archive_tick.tick() => {
                     if let Err(e) = archive_new_segments(&storage, &data_dir, &mut archived_hashes, &mut all_archived).await {
                         log::warn!("segment archive pass failed: {e}");
+                    }
+                }
+                // Reacts to a real flush the instant it happens rather than
+                // waiting for archive_tick — notify_one's stored-permit semantics
+                // mean a flush that lands between loop iterations isn't missed.
+                _ = flush_notify.notified() => {
+                    if let Err(e) = archive_new_segments(&storage, &data_dir, &mut archived_hashes, &mut all_archived).await {
+                        log::warn!("segment archive pass failed (flush-triggered): {e}");
                     }
                 }
                 _ = prune_tick.tick() => {

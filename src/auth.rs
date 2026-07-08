@@ -13,8 +13,9 @@ use std::sync::Arc;
 
 use axum::extract::{Extension, Request};
 use axum::http::{header, StatusCode};
-use axum::middleware::Next;
+use axum::middleware::{self, Next};
 use axum::response::Response;
+use axum::Router;
 
 #[derive(Clone)]
 pub struct AuthTokens(Arc<HashSet<String>>);
@@ -33,11 +34,18 @@ impl AuthTokens {
     }
 }
 
-/// Apply via `.layer(middleware::from_fn(auth::require_bearer_token)).layer(Extension(tokens))`
-/// — the `Extension` layer must be added *after* (so it wraps *outside*) the
-/// `from_fn` layer, since axum layers added later run first and this middleware
-/// needs the extension already inserted when it runs.
-pub async fn require_bearer_token(
+/// Applies the bearer-token check to a router — the one place this two-layer
+/// sequence (`Extension` must wrap *outside* `from_fn`, since axum layers added
+/// later run first and the middleware needs the extension already inserted) needs
+/// to be written, shared by every HTTP listener instead of each repeating it.
+pub fn layer<S>(router: Router<S>, tokens: AuthTokens) -> Router<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    router.layer(middleware::from_fn(require_bearer_token)).layer(Extension(tokens))
+}
+
+async fn require_bearer_token(
     Extension(tokens): Extension<AuthTokens>,
     request: Request,
     next: Next,

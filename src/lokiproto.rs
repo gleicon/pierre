@@ -19,7 +19,19 @@ pub struct DecodedStream {
     pub entries: Vec<(i64, String)>,
 }
 
+/// Caps the *claimed* decompressed size before allocating for it. Raw snappy's
+/// header embeds the uncompressed length and `snap`'s own decoder only rejects
+/// claims above ~4GB (`u32::MAX`) — well within reach of a single small POST body,
+/// since the claim itself is just a few header bytes, not the actual payload. Sized
+/// generously above any realistic Loki push batch (found via `/ds-security-review`).
+const MAX_DECOMPRESSED_BYTES: usize = 64 * 1024 * 1024;
+
 pub fn decode_push_request(body: &[u8]) -> anyhow::Result<Vec<DecodedStream>> {
+    let claimed_len = snap::raw::decompress_len(body).map_err(|e| anyhow::anyhow!("invalid snappy header: {e}"))?;
+    if claimed_len > MAX_DECOMPRESSED_BYTES {
+        anyhow::bail!("snappy payload claims {claimed_len} decompressed bytes, exceeding the {MAX_DECOMPRESSED_BYTES} limit");
+    }
+
     let decompressed = snap::raw::Decoder::new()
         .decompress_vec(body)
         .map_err(|e| anyhow::anyhow!("snappy decompress failed: {e}"))?;

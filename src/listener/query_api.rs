@@ -4,12 +4,12 @@ use std::time::Duration;
 
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
-use axum::middleware;
 use axum::routing::get;
-use axum::{Extension, Json, Router};
+use axum::{Json, Router};
 use serde::Serialize;
 
 use crate::auth::AuthTokens;
+use crate::listener::parse_range;
 use crate::storage::Storage;
 use crate::{aggregate, query, textindex};
 
@@ -20,13 +20,12 @@ struct AppState {
 }
 
 pub fn router(storage: Arc<Storage>, textindex_bucket_duration: Duration, auth_tokens: AuthTokens) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/query/logs", get(logs_handler))
         .route("/query/search", get(search_handler))
         .route("/query/aggregate", get(aggregate_handler))
-        .with_state(AppState { storage, textindex_bucket_duration })
-        .layer(middleware::from_fn(crate::auth::require_bearer_token))
-        .layer(Extension(auth_tokens))
+        .with_state(AppState { storage, textindex_bucket_duration });
+    crate::auth::layer(router, auth_tokens)
 }
 
 pub async fn serve(addr: &str, storage: Arc<Storage>, textindex_bucket_duration: Duration, auth_tokens: AuthTokens) -> anyhow::Result<()> {
@@ -152,18 +151,4 @@ async fn aggregate_handler(
         }
         other => Err((StatusCode::BAD_REQUEST, format!("unknown op {other:?}"))),
     }
-}
-
-fn parse_range(params: &BTreeMap<String, String>) -> Result<(i64, i64), (StatusCode, String)> {
-    let start_ns: i64 = params
-        .get("start")
-        .ok_or((StatusCode::BAD_REQUEST, "missing `start` param".to_string()))?
-        .parse()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid `start` param".to_string()))?;
-    let end_ns: i64 = params
-        .get("end")
-        .ok_or((StatusCode::BAD_REQUEST, "missing `end` param".to_string()))?
-        .parse()
-        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid `end` param".to_string()))?;
-    Ok((start_ns, end_ns))
 }

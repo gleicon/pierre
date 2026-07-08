@@ -82,6 +82,28 @@ network hop between them.
   Loki query_range, native query API). Off by default (empty list). Deliberately not
   federated auth — matches what real collectors already send by default, not a new
   scheme, and not a claim of real access control beyond small/trusted-network use.
+- **Flush-triggered immediate archiving** — as of edgestore 1.3.0's
+  `with_on_segment_flushed` (wired through `AsyncTieredEngine::flush_notify()`), the
+  backup worker's archive pass races a `Notify` against its own interval tick, so a
+  segment that just flushed — explicit or edgestore's own auto-flush-on-put — gets
+  archived immediately instead of sitting local-only for up to `archive_interval_secs`.
+  Verified with `archive_interval` set to 3600s and the test still observing the
+  segment archived within 300ms (`tests/backup_filesystem.rs`).
+- **Unauthenticated-listener hardening (`/ds-security-review` findings, all fixed
+  this round)** — three DoS gaps closed on the surfaces that carry untrusted input
+  before or without auth: (1) Loki push's protobuf+snappy decoder now checks the
+  claimed decompressed size against a 64MB cap (`lokiproto.rs`) before allocating,
+  not after — `snap`'s own decoder only rejects claims above ~4GB, reachable from a
+  request body of a few bytes (`tests/lokiproto_decompression_bomb.rs`). (2) The
+  native protocol's client-supplied length prefix is capped at 16MB
+  (`listener/native.rs`) and rejected before the payload buffer is allocated — this
+  protocol is deliberately unauthenticated (no existing client convention to
+  authenticate against), so an unbounded prefix was an unauthenticated
+  memory-exhaustion DoS (`tests/native_ingest_roundtrip.rs`). (3) The native
+  listener now caps concurrent connections at 1024 via a semaphore, closing
+  connections over the cap immediately rather than letting them each pin a
+  socket/fd and a transient allocation — verified at a test capacity of 4 to avoid
+  tripping a low `ulimit -n` (`listener::native::tests`, in `native.rs`).
 
 ### Measured, not assumed
 - BM25 crash-recovery rebuild: fast at every scale tested, never the bottleneck

@@ -24,7 +24,7 @@ edgestore gives Pierre a real, tested foundation for ingest durability, full-tex
 - **Cold-tier index stripping** (drop BM25 inverted index, keep only a lightweight filter on archived data) — requires upstream edgestore work (tiering lifecycle hooks), not yet implemented. See Appendix A, ENG-5; Known Limitations #L1.
 - Full LogQL: no `rate()`, `sum by()`, or arbitrary metric-query planner.
 - Collector protocols beyond Loki push and native: no Fluent Forward, syslog, OTLP.
-- Horizontal clustering, rebalancing, or consensus.
+- Horizontal clustering, rebalancing, or consensus (partitioning/sharding data across nodes). Read replication — whole-dataset copies for query scale/HA via pull-only anti-entropy, no partition ownership or consensus — is a separate axis and not excluded by this line; see PLAN.md's "Read scaling" entry (blocked on edgestore `REPL-01`, not a v1 scope decision).
 - Multi-tenant isolation and RBAC.
 - Template similarity search / HNSW-based clustering (edgestore has a real HNSW vector engine already — unused by Pierre v1, candidate for v2 per original PRD).
 
