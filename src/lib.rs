@@ -10,6 +10,7 @@ pub mod query;
 pub mod record;
 pub mod retention;
 pub mod rollup;
+pub mod stats;
 pub mod storage;
 pub mod template;
 pub mod textindex;

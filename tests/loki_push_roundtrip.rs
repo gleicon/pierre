@@ -14,7 +14,7 @@ async fn loki_push_lands_in_the_same_store_as_native() {
     let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
     let allowed_fields = Arc::new(vec!["level".to_string()]);
 
-    let app = loki::router(storage.clone(), allowed_fields, None, None, pierre::auth::AuthTokens::new(vec![]));
+    let app = loki::router(storage.clone(), allowed_fields, None, None, pierre::auth::AuthTokens::new(vec![]), pierre::stats::IngestStats::default());
 
     let body = serde_json::json!({
         "streams": [

@@ -33,7 +33,7 @@ async fn query_range_answers_selector_plus_line_filter() {
     info_fields.insert("level".to_string(), "info".to_string());
     ingest(&storage, 1_200_000_000, "user logged in", info_fields).await;
 
-    let app = loki::router(storage, Arc::new(vec!["level".to_string()]), None, None, pierre::auth::AuthTokens::new(vec![]));
+    let app = loki::router(storage, Arc::new(vec!["level".to_string()]), None, None, pierre::auth::AuthTokens::new(vec![]), pierre::stats::IngestStats::default());
 
     let uri = "/loki/api/v1/query_range?query=%7Blevel%3D%22error%22%7D%20%7C%3D%20%22timeout%22&start=0&end=2000000000";
     let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
@@ -53,7 +53,7 @@ async fn query_range_answers_selector_plus_line_filter() {
 async fn query_range_rejects_malformed_logql() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
-    let app = loki::router(storage, Arc::new(vec![]), None, None, pierre::auth::AuthTokens::new(vec![]));
+    let app = loki::router(storage, Arc::new(vec![]), None, None, pierre::auth::AuthTokens::new(vec![]), pierre::stats::IngestStats::default());
 
     let req = Request::builder()
         .uri("/loki/api/v1/query_range?query=not-a-selector&start=0&end=1000")

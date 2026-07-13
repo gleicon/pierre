@@ -35,7 +35,7 @@ async fn native_write_is_durable_and_immediately_readable() {
     let fields_for_server = allowed_fields.clone();
     let addr_clone = addr.clone();
     tokio::spawn(async move {
-        listener::native::serve(&addr_clone, storage_for_server, fields_for_server, None, None)
+        listener::native::serve(&addr_clone, storage_for_server, fields_for_server, None, None, pierre::stats::IngestStats::default())
             .await
             .unwrap();
     });
@@ -94,7 +94,7 @@ async fn oversized_length_prefix_is_rejected_before_allocating() {
 
     let addr_for_server = addr.clone();
     tokio::spawn(async move {
-        listener::native::serve(&addr_for_server, storage, allowed_fields, None, None).await.unwrap();
+        listener::native::serve(&addr_for_server, storage, allowed_fields, None, None, pierre::stats::IngestStats::default()).await.unwrap();
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -136,7 +136,7 @@ async fn frame_length_prefix_exactly_at_the_limit_is_accepted() {
 
     let addr_for_server = addr.clone();
     tokio::spawn(async move {
-        let _ = listener::native::serve(&addr_for_server, storage, allowed_fields, None, None).await;
+        let _ = listener::native::serve(&addr_for_server, storage, allowed_fields, None, None, pierre::stats::IngestStats::default()).await;
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
 

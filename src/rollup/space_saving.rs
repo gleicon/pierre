@@ -53,7 +53,7 @@ impl SpaceSaving {
             *combined.entry(key.clone()).or_insert(0) += count;
         }
         let mut items: Vec<(String, u64)> = combined.into_iter().collect();
-        items.sort_by(|a, b| b.1.cmp(&a.1));
+        items.sort_by_key(|b| std::cmp::Reverse(b.1));
         items.truncate(self.capacity);
         self.counts = items.into_iter().collect();
     }

@@ -64,12 +64,16 @@ async fn main() -> anyhow::Result<()> {
     let textindex_bucket_duration = Duration::from_secs(config.textindex_bucket_duration_secs);
     let auth_tokens = pierre::auth::AuthTokens::new(config.auth_tokens.clone());
 
+    let stats = pierre::stats::IngestStats::default();
+    pierre::stats::spawn(stats.clone(), rollup.clone(), Some(textindex.clone()), Duration::from_secs(5));
+
     let native = listener::native::serve(
         &config.native_listen_addr,
         storage.clone(),
         allowed_fields.clone(),
         rollup.clone(),
         Some(textindex.clone()),
+        stats.clone(),
     );
     let loki = listener::loki::serve(
         &config.loki_listen_addr,
@@ -78,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
         rollup,
         Some(textindex),
         auth_tokens.clone(),
+        stats,
     );
     let query_api = listener::query_api::serve(&config.query_listen_addr, storage, textindex_bucket_duration, auth_tokens);
     tokio::try_join!(native, loki, query_api)?;

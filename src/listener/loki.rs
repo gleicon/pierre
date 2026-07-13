@@ -12,6 +12,7 @@ use crate::auth::AuthTokens;
 use crate::listener::parse_range;
 use crate::record::WireRecord;
 use crate::rollup::RollupHandle;
+use crate::stats::IngestStats;
 use crate::storage::Storage;
 use crate::textindex::TextIndexHandle;
 
@@ -21,6 +22,7 @@ struct AppState {
     allowed_fields: Arc<Vec<String>>,
     rollup: Option<RollupHandle>,
     textindex: Option<TextIndexHandle>,
+    stats: IngestStats,
 }
 
 /// Loki's push API request shape: one entry per label set, each with its own
@@ -43,11 +45,12 @@ pub fn router(
     rollup: Option<RollupHandle>,
     textindex: Option<TextIndexHandle>,
     auth_tokens: AuthTokens,
+    stats: IngestStats,
 ) -> Router {
     let router = Router::new()
         .route("/loki/api/v1/push", post(push_handler))
         .route("/loki/api/v1/query_range", get(query_range_handler))
-        .with_state(AppState { storage, allowed_fields, rollup, textindex });
+        .with_state(AppState { storage, allowed_fields, rollup, textindex, stats });
     crate::auth::layer(router, auth_tokens)
 }
 
@@ -58,8 +61,9 @@ pub async fn serve(
     rollup: Option<RollupHandle>,
     textindex: Option<TextIndexHandle>,
     auth_tokens: AuthTokens,
+    stats: IngestStats,
 ) -> anyhow::Result<()> {
-    let app = router(storage, allowed_fields, rollup, textindex, auth_tokens);
+    let app = router(storage, allowed_fields, rollup, textindex, auth_tokens, stats);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
@@ -105,6 +109,7 @@ async fn push_handler(State(state): State<AppState>, headers: HeaderMap, body: B
             crate::ingest::commit(&state.storage, wire, &state.allowed_fields, state.rollup.as_ref(), state.textindex.as_ref())
                 .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            state.stats.record_commit();
         }
     }
     // Real Loki returns 204 with no body on a successful push.

@@ -6,6 +6,7 @@ use tokio::sync::Semaphore;
 
 use crate::record::WireRecord;
 use crate::rollup::RollupHandle;
+use crate::stats::IngestStats;
 use crate::storage::Storage;
 use crate::textindex::TextIndexHandle;
 
@@ -33,8 +34,9 @@ pub async fn serve(
     allowed_fields: Arc<Vec<String>>,
     rollup: Option<RollupHandle>,
     textindex: Option<TextIndexHandle>,
+    stats: IngestStats,
 ) -> anyhow::Result<()> {
-    serve_with_capacity(addr, storage, allowed_fields, rollup, textindex, MAX_CONCURRENT_CONNECTIONS).await
+    serve_with_capacity(addr, storage, allowed_fields, rollup, textindex, stats, MAX_CONCURRENT_CONNECTIONS).await
 }
 
 /// `capacity` is split out from `serve` so tests can exercise cap enforcement with
@@ -48,6 +50,7 @@ async fn serve_with_capacity(
     allowed_fields: Arc<Vec<String>>,
     rollup: Option<RollupHandle>,
     textindex: Option<TextIndexHandle>,
+    stats: IngestStats,
     capacity: usize,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(addr).await?;
@@ -65,9 +68,10 @@ async fn serve_with_capacity(
         let allowed_fields = allowed_fields.clone();
         let rollup = rollup.clone();
         let textindex = textindex.clone();
+        let stats = stats.clone();
         tokio::spawn(async move {
             let _permit = permit; // held for the connection's lifetime, released on drop
-            if let Err(e) = handle_connection(stream, storage, allowed_fields, rollup, textindex).await {
+            if let Err(e) = handle_connection(stream, storage, allowed_fields, rollup, textindex, stats).await {
                 log::warn!("native connection ended: {e}");
             }
         });
@@ -80,6 +84,7 @@ async fn handle_connection(
     allowed_fields: Arc<Vec<String>>,
     rollup: Option<RollupHandle>,
     textindex: Option<TextIndexHandle>,
+    stats: IngestStats,
 ) -> anyhow::Result<()> {
     loop {
         let mut len_buf = [0u8; 4];
@@ -95,7 +100,7 @@ async fn handle_connection(
         let mut payload = vec![0u8; len];
         stream.read_exact(&mut payload).await?;
 
-        let ack = match process_batch(&payload, &storage, &allowed_fields, rollup.as_ref(), textindex.as_ref()).await {
+        let ack = match process_batch(&payload, &storage, &allowed_fields, rollup.as_ref(), textindex.as_ref(), &stats).await {
             Ok(()) => 1u8,
             Err(e) => {
                 log::warn!("native batch rejected: {e}");
@@ -112,10 +117,12 @@ async fn process_batch(
     allowed_fields: &[String],
     rollup: Option<&RollupHandle>,
     textindex: Option<&TextIndexHandle>,
+    stats: &IngestStats,
 ) -> anyhow::Result<()> {
     let batch: Vec<WireRecord> = serde_json::from_slice(payload)?;
     for wire in batch {
         crate::ingest::commit(storage, wire, allowed_fields, rollup, textindex).await?;
+        stats.record_commit();
     }
     Ok(())
 }
@@ -141,7 +148,7 @@ mod tests {
 
         let addr_for_server = addr.clone();
         tokio::spawn(async move {
-            let _ = serve_with_capacity(&addr_for_server, storage, allowed_fields, None, None, CAPACITY).await;
+            let _ = serve_with_capacity(&addr_for_server, storage, allowed_fields, None, None, IngestStats::default(), CAPACITY).await;
         });
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 

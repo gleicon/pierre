@@ -23,7 +23,14 @@ async fn main() {
     let addr_clone = addr.clone();
     let storage_clone = storage.clone();
     tokio::spawn(async move {
-        pierre::listener::native::serve(&addr_clone, storage_clone, Arc::new(vec!["level".to_string()]), None, None)
+        pierre::listener::native::serve(
+            &addr_clone,
+            storage_clone,
+            Arc::new(vec!["level".to_string()]),
+            None,
+            None,
+            pierre::stats::IngestStats::default(),
+        )
             .await
             .unwrap();
     });

@@ -70,6 +70,7 @@ async fn loki_router_enforces_the_same_auth() {
         None,
         None,
         AuthTokens::new(vec!["secret-token".to_string()]),
+        pierre::stats::IngestStats::default(),
     );
 
     let req = Request::builder().uri("/loki/api/v1/query_range?query={}&start=0&end=1").body(Body::empty()).unwrap();

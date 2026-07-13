@@ -17,7 +17,7 @@ async fn loki_push_decodes_real_protobuf_snappy_wire_format() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
     let allowed_fields = Arc::new(vec!["level".to_string()]);
-    let app = loki::router(storage.clone(), allowed_fields, None, None, pierre::auth::AuthTokens::new(vec![]));
+    let app = loki::router(storage.clone(), allowed_fields, None, None, pierre::auth::AuthTokens::new(vec![]), pierre::stats::IngestStats::default());
 
     let push_request = pierre::lokiproto::PushRequest {
         streams: vec![pierre::lokiproto::StreamAdapter {
@@ -63,7 +63,7 @@ async fn loki_push_defaults_to_protobuf_when_content_type_is_absent() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
     let allowed_fields = Arc::new(vec![]);
-    let app = loki::router(storage.clone(), allowed_fields, None, None, pierre::auth::AuthTokens::new(vec![]));
+    let app = loki::router(storage.clone(), allowed_fields, None, None, pierre::auth::AuthTokens::new(vec![]), pierre::stats::IngestStats::default());
 
     let push_request = pierre::lokiproto::PushRequest {
         streams: vec![pierre::lokiproto::StreamAdapter {
