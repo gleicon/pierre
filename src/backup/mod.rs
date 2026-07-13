@@ -76,8 +76,14 @@ pub struct ArchivedSegmentRecord {
 
 impl ArchivedSegmentRecord {
     pub fn new(meta: SegmentMeta) -> Self {
-        let archived_at_unix_secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
-        ArchivedSegmentRecord { meta, archived_at_unix_secs }
+        let archived_at_unix_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        ArchivedSegmentRecord {
+            meta,
+            archived_at_unix_secs,
+        }
     }
 
     fn archived_at(&self) -> SystemTime {
@@ -107,7 +113,10 @@ pub async fn load_archived_meta(data_dir: &Path) -> Vec<ArchivedSegmentRecord> {
     }
 }
 
-async fn save_archived_meta(data_dir: &Path, records: &[ArchivedSegmentRecord]) -> anyhow::Result<()> {
+async fn save_archived_meta(
+    data_dir: &Path,
+    records: &[ArchivedSegmentRecord],
+) -> anyhow::Result<()> {
     let bytes = serde_json::to_vec(records)?;
     tokio::fs::write(archived_meta_path(data_dir), bytes).await?;
     Ok(())
@@ -147,7 +156,11 @@ pub async fn spawn(
     for record in prior {
         if let Ok(hash) = <[u8; 32]>::try_from(record.meta.segment_hash.as_slice()) {
             archived_hashes.insert(hash);
-            restored.push(ArchivedSegment { hash, min_key: record.meta.min_key.clone(), max_key: record.meta.max_key.clone() });
+            restored.push(ArchivedSegment {
+                hash,
+                min_key: record.meta.min_key.clone(),
+                max_key: record.meta.max_key.clone(),
+            });
             all_archived.push(record);
         }
     }
@@ -233,13 +246,20 @@ async fn archive_new_segments(
 /// already-pruned segment is a no-op (`Engine::prune_local_segment`), so there's no
 /// need to track a separate "already pruned" flag. Errors on an individual segment
 /// are logged and skipped, not fatal to the pass.
-async fn prune_local_segments(storage: &Storage, all_archived: &[ArchivedSegmentRecord], grace_period: Duration) {
+async fn prune_local_segments(
+    storage: &Storage,
+    all_archived: &[ArchivedSegmentRecord],
+    grace_period: Duration,
+) {
     for record in all_archived {
         if !crate::retention::is_due(record.archived_at(), grace_period) {
             continue;
         }
         if let Err(e) = storage.prune_local_segment(record.meta.segment_id).await {
-            log::warn!("failed to prune local segment {}: {e}", record.meta.segment_id);
+            log::warn!(
+                "failed to prune local segment {}: {e}",
+                record.meta.segment_id
+            );
         }
     }
 }

@@ -15,7 +15,10 @@ fn oversized_snappy_claim_is_rejected_without_decompressing() {
 
     match pierre::lokiproto::decode_push_request(&body) {
         Ok(_) => panic!("a snappy payload claiming 200MB decompressed must be rejected"),
-        Err(e) => assert!(e.to_string().contains("claims"), "error should explain the oversized claim, got: {e}"),
+        Err(e) => assert!(
+            e.to_string().contains("claims"),
+            "error should explain the oversized claim, got: {e}"
+        ),
     }
 }
 
@@ -26,7 +29,10 @@ fn realistic_snappy_payload_still_decodes_correctly() {
         streams: vec![pierre::lokiproto::StreamAdapter {
             labels: r#"{level="info"}"#.to_string(),
             entries: vec![pierre::lokiproto::EntryAdapter {
-                timestamp: Some(prost_types::Timestamp { seconds: 1, nanos: 0 }),
+                timestamp: Some(prost_types::Timestamp {
+                    seconds: 1,
+                    nanos: 0,
+                }),
                 line: "well within limits".to_string(),
                 structured_metadata: vec![],
                 parsed: vec![],
@@ -71,7 +77,10 @@ fn claim_one_byte_over_the_limit_is_rejected() {
 
     match pierre::lokiproto::decode_push_request(&body) {
         Ok(_) => panic!("a snappy payload claiming one byte over the limit must be rejected"),
-        Err(e) => assert!(e.to_string().contains("claims"), "error should explain the oversized claim, got: {e}"),
+        Err(e) => assert!(
+            e.to_string().contains("claims"),
+            "error should explain the oversized claim, got: {e}"
+        ),
     }
 }
 

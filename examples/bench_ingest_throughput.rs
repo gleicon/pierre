@@ -31,8 +31,8 @@ async fn main() {
             None,
             pierre::stats::IngestStats::default(),
         )
-            .await
-            .unwrap();
+        .await
+        .unwrap();
     });
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -48,7 +48,9 @@ async fn main() {
             let payload = serde_json::to_vec(&vec![pierre::record::WireRecord {
                 timestamp_ns: 1,
                 message: "benchmark ingest line for throughput measurement".to_string(),
-                fields: [("level".to_string(), "info".to_string())].into_iter().collect(),
+                fields: [("level".to_string(), "info".to_string())]
+                    .into_iter()
+                    .collect(),
             }])
             .unwrap();
             let len_prefix = (payload.len() as u32).to_be_bytes();
@@ -70,5 +72,12 @@ async fn main() {
     let total = completed.load(Ordering::Relaxed);
     let rate = total as f64 / DURATION.as_secs_f64();
     println!("concurrency={CONCURRENCY}  duration={DURATION:?}  total_acked={total}  achieved_req_s={rate:.0}");
-    println!("NFR-2 target: 10,000 req/s — {}", if rate >= 10_000.0 { "MET" } else { "NOT MET at this concurrency" });
+    println!(
+        "NFR-2 target: 10,000 req/s — {}",
+        if rate >= 10_000.0 {
+            "MET"
+        } else {
+            "NOT MET at this concurrency"
+        }
+    );
 }

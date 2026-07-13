@@ -14,7 +14,10 @@ pub struct SpaceSaving {
 
 impl SpaceSaving {
     pub fn new(capacity: usize) -> Self {
-        SpaceSaving { capacity, counts: HashMap::new() }
+        SpaceSaving {
+            capacity,
+            counts: HashMap::new(),
+        }
     }
 
     pub fn observe(&mut self, item: &str) {
@@ -37,7 +40,8 @@ impl SpaceSaving {
     }
 
     pub fn top_k(&self, k: usize) -> Vec<(String, u64)> {
-        let mut items: Vec<(String, u64)> = self.counts.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        let mut items: Vec<(String, u64)> =
+            self.counts.iter().map(|(k, v)| (k.clone(), *v)).collect();
         items.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         items.truncate(k);
         items
@@ -91,7 +95,10 @@ mod tests {
             ss.observe(&format!("noise-{i}"));
         }
         let top = ss.top_k(1);
-        assert_eq!(top[0].0, "heavy", "the true heavy hitter must not be evicted by one-off noise");
+        assert_eq!(
+            top[0].0, "heavy",
+            "the true heavy hitter must not be evicted by one-off noise"
+        );
     }
 
     #[test]
@@ -113,7 +120,11 @@ mod tests {
         a.merge_from(&b);
         let top = a.top_k(5);
         let as_map: HashMap<String, u64> = top.into_iter().collect();
-        assert_eq!(as_map.get("x"), Some(&15), "shared key counts must sum across the merge");
+        assert_eq!(
+            as_map.get("x"),
+            Some(&15),
+            "shared key counts must sum across the merge"
+        );
         assert_eq!(as_map.get("z"), Some(&3));
     }
 }

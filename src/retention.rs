@@ -11,7 +11,10 @@ use std::time::{Duration, SystemTime};
 /// given `grace_period` must have elapsed. An `event_time` in the future (clock skew
 /// or a bug upstream) is treated as not-yet-due rather than an error.
 pub fn is_due(event_time: SystemTime, grace_period: Duration) -> bool {
-    event_time.elapsed().map(|elapsed| elapsed >= grace_period).unwrap_or(false)
+    event_time
+        .elapsed()
+        .map(|elapsed| elapsed >= grace_period)
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

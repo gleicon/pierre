@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::hash::BuildHasher;
 
 use hyperloglogplus::{HyperLogLog, HyperLogLogPlus};
@@ -93,7 +93,9 @@ impl FieldSketch {
             FieldSketch::TopK(ss) => ss.observe(value),
             FieldSketch::DDSketch(dd) => match value.parse::<f64>() {
                 Ok(v) => dd.add(v),
-                Err(_) => log::warn!("rollup: non-numeric value {value:?} for ddsketch field, dropped"),
+                Err(_) => {
+                    log::warn!("rollup: non-numeric value {value:?} for ddsketch field, dropped")
+                }
             },
         }
     }
@@ -129,7 +131,9 @@ impl FieldSketch {
             TAG_EXACT => Ok(FieldSketch::Exact(serde_json::from_slice(rest)?)),
             TAG_HLL => Ok(FieldSketch::Hll(Box::new(serde_json::from_slice(rest)?))),
             TAG_TOPK => Ok(FieldSketch::TopK(serde_json::from_slice(rest)?)),
-            TAG_DDSKETCH => Ok(FieldSketch::DDSketch(Box::new(serde_json::from_slice(rest)?))),
+            TAG_DDSKETCH => Ok(FieldSketch::DDSketch(Box::new(serde_json::from_slice(
+                rest,
+            )?))),
             other => Err(anyhow::anyhow!("unknown rollup sketch tag {other}")),
         }
     }
@@ -144,24 +148,28 @@ impl FieldSketch {
                 }
                 Ok(())
             }
-            (FieldSketch::Hll(a), FieldSketch::Hll(b)) => {
-                a.merge(b).map_err(|e| anyhow::anyhow!("HLL merge failed: {e:?}"))
-            }
+            (FieldSketch::Hll(a), FieldSketch::Hll(b)) => a
+                .merge(b)
+                .map_err(|e| anyhow::anyhow!("HLL merge failed: {e:?}")),
             (FieldSketch::TopK(a), FieldSketch::TopK(b)) => {
                 a.merge_from(b);
                 Ok(())
             }
-            (FieldSketch::DDSketch(a), FieldSketch::DDSketch(b)) => {
-                a.merge(b).map_err(|e| anyhow::anyhow!("DDSketch merge failed: {e}"))
-            }
-            _ => Err(anyhow::anyhow!("cannot merge mismatched rollup sketch kinds")),
+            (FieldSketch::DDSketch(a), FieldSketch::DDSketch(b)) => a
+                .merge(b)
+                .map_err(|e| anyhow::anyhow!("DDSketch merge failed: {e}")),
+            _ => Err(anyhow::anyhow!(
+                "cannot merge mismatched rollup sketch kinds"
+            )),
         }
     }
 
     /// Raw value→count map — only meaningful for `Exact`; other kinds return `None`.
     pub fn exact_counts(&self) -> Option<std::collections::BTreeMap<String, u64>> {
         match self {
-            FieldSketch::Exact(counts) => Some(counts.iter().map(|(k, v)| (k.clone(), *v)).collect()),
+            FieldSketch::Exact(counts) => {
+                Some(counts.iter().map(|(k, v)| (k.clone(), *v)).collect())
+            }
             _ => None,
         }
     }
@@ -205,7 +213,10 @@ mod tests {
         let bytes = sketch.to_bytes().unwrap();
         let mut decoded = FieldSketch::from_bytes(&bytes).unwrap();
         let estimate = decoded.hll_estimate().unwrap();
-        assert!((450.0..550.0).contains(&estimate), "estimate {estimate} should be close to 500");
+        assert!(
+            (450.0..550.0).contains(&estimate),
+            "estimate {estimate} should be close to 500"
+        );
     }
 
     #[test]
@@ -222,7 +233,10 @@ mod tests {
         a.merge_from(&b).unwrap();
         let estimate = a.hll_estimate().unwrap();
         // union of [0,300) and [200,500) is [0,500) => ~500 distinct, not 300+300=600
-        assert!((450.0..550.0).contains(&estimate), "merged estimate {estimate} should reflect the union, not the sum");
+        assert!(
+            (450.0..550.0).contains(&estimate),
+            "merged estimate {estimate} should reflect the union, not the sum"
+        );
     }
 
     #[test]
@@ -254,7 +268,10 @@ mod tests {
         }
         let p99 = sketch.quantile(0.99).unwrap();
         // True p99 of 1..=1000 is 990; DDSketch guarantees relative error <= alpha (0.01).
-        assert!((980.0..1000.0).contains(&p99), "p99 estimate {p99} should be within ~1% of 990");
+        assert!(
+            (980.0..1000.0).contains(&p99),
+            "p99 estimate {p99} should be within ~1% of 990"
+        );
     }
 
     #[test]
@@ -273,7 +290,10 @@ mod tests {
         decoded.merge_from(&b).unwrap();
 
         let p99 = decoded.quantile(0.99).unwrap();
-        assert!((980.0..1000.0).contains(&p99), "merged p99 estimate {p99} should reflect the full 1..=1000 range");
+        assert!(
+            (980.0..1000.0).contains(&p99),
+            "merged p99 estimate {p99} should reflect the full 1..=1000 range"
+        );
     }
 
     #[test]
@@ -282,7 +302,10 @@ mod tests {
         sketch.observe("not-a-number"); // must be silently dropped, not panic or get added
         sketch.observe("42");
         let median = sketch.quantile(0.5).unwrap();
-        assert!((41.0..43.0).contains(&median), "only the numeric value should have been added; got median {median}");
+        assert!(
+            (41.0..43.0).contains(&median),
+            "only the numeric value should have been added; got median {median}"
+        );
     }
 
     #[test]

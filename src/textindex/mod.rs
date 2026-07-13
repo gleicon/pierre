@@ -25,7 +25,15 @@ impl TextIndexHandle {
     /// Non-blocking; drops and counts the sample if the worker is behind, same
     /// backpressure philosophy as rollups (FR-19) even though BM25 has no matching FR.
     pub fn record(&self, key: Vec<u8>, text: String, timestamp_ns: i64) {
-        if self.sender.try_send(TextSample { key, text, timestamp_ns }).is_err() {
+        if self
+            .sender
+            .try_send(TextSample {
+                key,
+                text,
+                timestamp_ns,
+            })
+            .is_err()
+        {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -113,7 +121,11 @@ pub async fn search(
     for ns in namespaces {
         merged.extend(storage.search_text(&ns, query, k).await?);
     }
-    merged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    merged.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     merged.truncate(k);
     Ok(merged)
 }
@@ -126,7 +138,11 @@ fn bucket_namespace(timestamp_ns: i64, bucket_duration: Duration) -> Vec<u8> {
 }
 
 /// All distinct bucket namespaces overlapping `[start_ns, end_ns)`.
-fn bucket_namespaces_for_range(start_ns: i64, end_ns: i64, bucket_duration: Duration) -> Vec<Vec<u8>> {
+fn bucket_namespaces_for_range(
+    start_ns: i64,
+    end_ns: i64,
+    bucket_duration: Duration,
+) -> Vec<Vec<u8>> {
     let bucket_ns = bucket_duration.as_nanos().max(1) as i64;
     let first_bucket = start_ns.div_euclid(bucket_ns) * bucket_ns;
     let mut out = Vec::new();

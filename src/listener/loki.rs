@@ -39,6 +39,15 @@ struct LokiStream {
     values: Vec<(String, String)>,
 }
 
+/// One label-set-plus-lines stream, decoded from either JSON or protobuf — the
+/// shared shape `push_handler` folds both wire formats into before committing.
+type ParsedStreams = Vec<(BTreeMap<String, String>, Vec<(i64, String)>)>;
+
+/// `query_range_handler`'s Loki-style grouping: matching records bucketed by
+/// their full field set, each bucket holding that stream's `(timestamp, line)`
+/// pairs — mirrors Loki's own "one entry per label combination" response model.
+type GroupedStreams = BTreeMap<Vec<(String, String)>, Vec<(String, String)>>;
+
 pub fn router(
     storage: Arc<Storage>,
     allowed_fields: Arc<Vec<String>>,
@@ -50,7 +59,13 @@ pub fn router(
     let router = Router::new()
         .route("/loki/api/v1/push", post(push_handler))
         .route("/loki/api/v1/query_range", get(query_range_handler))
-        .with_state(AppState { storage, allowed_fields, rollup, textindex, stats });
+        .with_state(AppState {
+            storage,
+            allowed_fields,
+            rollup,
+            textindex,
+            stats,
+        });
     crate::auth::layer(router, auth_tokens)
 }
 
@@ -63,7 +78,14 @@ pub async fn serve(
     auth_tokens: AuthTokens,
     stats: IngestStats,
 ) -> anyhow::Result<()> {
-    let app = router(storage, allowed_fields, rollup, textindex, auth_tokens, stats);
+    let app = router(
+        storage,
+        allowed_fields,
+        rollup,
+        textindex,
+        auth_tokens,
+        stats,
+    );
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
@@ -75,14 +97,19 @@ pub async fn serve(
 /// test. Dispatch on Content-Type the same way Loki's own server does: JSON only
 /// when explicitly declared, protobuf+snappy otherwise (including when the header
 /// is absent entirely).
-async fn push_handler(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Result<StatusCode, StatusCode> {
+async fn push_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<StatusCode, StatusCode> {
     let is_json = headers
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|ct| ct.starts_with("application/json"));
 
-    let streams: Vec<(BTreeMap<String, String>, Vec<(i64, String)>)> = if is_json {
-        let req: LokiPushRequest = serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let streams: ParsedStreams = if is_json {
+        let req: LokiPushRequest =
+            serde_json::from_slice(&body).map_err(|_| StatusCode::BAD_REQUEST)?;
         req.streams
             .into_iter()
             .map(|s| {
@@ -105,10 +132,20 @@ async fn push_handler(State(state): State<AppState>, headers: HeaderMap, body: B
 
     for (labels, entries) in streams {
         for (timestamp_ns, line) in entries {
-            let wire = WireRecord { timestamp_ns, message: line, fields: labels.clone() };
-            crate::ingest::commit(&state.storage, wire, &state.allowed_fields, state.rollup.as_ref(), state.textindex.as_ref())
-                .await
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let wire = WireRecord {
+                timestamp_ns,
+                message: line,
+                fields: labels.clone(),
+            };
+            crate::ingest::commit(
+                &state.storage,
+                wire,
+                &state.allowed_fields,
+                state.rollup.as_ref(),
+                state.textindex.as_ref(),
+            )
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             state.stats.record_commit();
         }
     }
@@ -144,7 +181,9 @@ async fn query_range_handler(
     State(state): State<AppState>,
     Query(params): Query<BTreeMap<String, String>>,
 ) -> Result<Json<LokiQueryResponse>, (StatusCode, String)> {
-    let query_str = params.get("query").ok_or((StatusCode::BAD_REQUEST, "missing `query` param".to_string()))?;
+    let query_str = params
+        .get("query")
+        .ok_or((StatusCode::BAD_REQUEST, "missing `query` param".to_string()))?;
     let parsed = crate::logql::parse(query_str).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let (start_ns, end_ns) = parse_range(&params)?;
 
@@ -152,25 +191,37 @@ async fn query_range_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let matching = records
-        .into_iter()
-        .filter(|r| parsed.line_filter.as_ref().is_none_or(|f| r.message.contains(f.as_str())));
+    let matching = records.into_iter().filter(|r| {
+        parsed
+            .line_filter
+            .as_ref()
+            .is_none_or(|f| r.message.contains(f.as_str()))
+    });
 
     // Group by the record's full field set, matching Loki's "one entry per label
     // combination" stream model.
-    let mut streams: BTreeMap<Vec<(String, String)>, Vec<(String, String)>> = BTreeMap::new();
+    let mut streams: GroupedStreams = BTreeMap::new();
     for r in matching {
         let key: Vec<(String, String)> = r.fields.into_iter().collect();
-        streams.entry(key).or_default().push((r.timestamp_ns.to_string(), r.message));
+        streams
+            .entry(key)
+            .or_default()
+            .push((r.timestamp_ns.to_string(), r.message));
     }
 
     let result = streams
         .into_iter()
-        .map(|(labels, values)| LokiResultStream { stream: labels.into_iter().collect(), values })
+        .map(|(labels, values)| LokiResultStream {
+            stream: labels.into_iter().collect(),
+            values,
+        })
         .collect();
 
     Ok(Json(LokiQueryResponse {
         status: "success",
-        data: LokiQueryData { result_type: "streams", result },
+        data: LokiQueryData {
+            result_type: "streams",
+            result,
+        },
     }))
 }

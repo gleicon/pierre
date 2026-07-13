@@ -36,7 +36,16 @@ pub async fn serve(
     textindex: Option<TextIndexHandle>,
     stats: IngestStats,
 ) -> anyhow::Result<()> {
-    serve_with_capacity(addr, storage, allowed_fields, rollup, textindex, stats, MAX_CONCURRENT_CONNECTIONS).await
+    serve_with_capacity(
+        addr,
+        storage,
+        allowed_fields,
+        rollup,
+        textindex,
+        stats,
+        MAX_CONCURRENT_CONNECTIONS,
+    )
+    .await
 }
 
 /// `capacity` is split out from `serve` so tests can exercise cap enforcement with
@@ -71,7 +80,9 @@ async fn serve_with_capacity(
         let stats = stats.clone();
         tokio::spawn(async move {
             let _permit = permit; // held for the connection's lifetime, released on drop
-            if let Err(e) = handle_connection(stream, storage, allowed_fields, rollup, textindex, stats).await {
+            if let Err(e) =
+                handle_connection(stream, storage, allowed_fields, rollup, textindex, stats).await
+            {
                 log::warn!("native connection ended: {e}");
             }
         });
@@ -93,14 +104,25 @@ async fn handle_connection(
         }
         let len = u32::from_be_bytes(len_buf) as usize;
         if len > MAX_FRAME_BYTES {
-            log::warn!("native frame length {len} exceeds max {MAX_FRAME_BYTES}, closing connection");
+            log::warn!(
+                "native frame length {len} exceeds max {MAX_FRAME_BYTES}, closing connection"
+            );
             stream.write_all(&[0u8]).await?;
             return Ok(());
         }
         let mut payload = vec![0u8; len];
         stream.read_exact(&mut payload).await?;
 
-        let ack = match process_batch(&payload, &storage, &allowed_fields, rollup.as_ref(), textindex.as_ref(), &stats).await {
+        let ack = match process_batch(
+            &payload,
+            &storage,
+            &allowed_fields,
+            rollup.as_ref(),
+            textindex.as_ref(),
+            &stats,
+        )
+        .await
+        {
             Ok(()) => 1u8,
             Err(e) => {
                 log::warn!("native batch rejected: {e}");
@@ -148,7 +170,16 @@ mod tests {
 
         let addr_for_server = addr.clone();
         tokio::spawn(async move {
-            let _ = serve_with_capacity(&addr_for_server, storage, allowed_fields, None, None, IngestStats::default(), CAPACITY).await;
+            let _ = serve_with_capacity(
+                &addr_for_server,
+                storage,
+                allowed_fields,
+                None,
+                None,
+                IngestStats::default(),
+                CAPACITY,
+            )
+            .await;
         });
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
@@ -180,6 +211,9 @@ mod tests {
             under_cap.read(&mut buf).await
         })
         .await;
-        assert!(result.is_err(), "a connection under the cap must not be closed");
+        assert!(
+            result.is_err(),
+            "a connection under the cap must not be closed"
+        );
     }
 }

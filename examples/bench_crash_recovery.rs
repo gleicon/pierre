@@ -13,13 +13,20 @@ async fn main() {
         let remote_dir = tempfile::tempdir().unwrap();
 
         {
-            let remote = edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
-            let storage = Storage::open_with_remote(dir.path(), Box::new(remote)).await.unwrap();
+            let remote =
+                edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf())
+                    .unwrap();
+            let storage = Storage::open_with_remote(dir.path(), Box::new(remote))
+                .await
+                .unwrap();
 
             let index_start = Instant::now();
             for i in 0..n {
                 let text = format!("request {i} completed in {}ms with status ok", i % 500);
-                storage.index_text(b"bench_ns", format!("doc-{i:08}").as_bytes(), &text).await.unwrap();
+                storage
+                    .index_text(b"bench_ns", format!("doc-{i:08}").as_bytes(), &text)
+                    .await
+                    .unwrap();
             }
             let index_elapsed = index_start.elapsed();
             println!(
@@ -31,14 +38,27 @@ async fn main() {
         } // `storage` dropped here — the "crash".
 
         let reopen_start = Instant::now();
-        let remote = edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
-        let recovered = Storage::open_with_remote(dir.path(), Box::new(remote)).await.unwrap();
+        let remote =
+            edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
+        let recovered = Storage::open_with_remote(dir.path(), Box::new(remote))
+            .await
+            .unwrap();
         let reopen_elapsed = reopen_start.elapsed();
 
         // Confirm the rebuild actually happened and is correct, not just fast.
-        let results = recovered.search_text(b"bench_ns", "request", 1).await.unwrap();
-        assert_eq!(results.len(), 1, "rebuild must have actually restored the index");
+        let results = recovered
+            .search_text(b"bench_ns", "request", 1)
+            .await
+            .unwrap();
+        assert_eq!(
+            results.len(),
+            1,
+            "rebuild must have actually restored the index"
+        );
 
-        println!("n={n:>8}  Storage::open() after crash: {:>8.2?}\n", reopen_elapsed);
+        println!(
+            "n={n:>8}  Storage::open() after crash: {:>8.2?}\n",
+            reopen_elapsed
+        );
     }
 }

@@ -40,9 +40,9 @@ impl TierConfig {
             day_duration: Duration::from_secs(86_400),
             month_duration: Duration::from_secs(30 * 86_400),
             minute_ttl_secs: 3600,             // 1 hour
-            hour_ttl_secs: 7 * 86_400,          // 1 week
-            day_ttl_secs: 90 * 86_400,          // 90 days
-            month_ttl_secs: 10 * 365 * 86_400,  // ~10 years — effectively forever
+            hour_ttl_secs: 7 * 86_400,         // 1 week
+            day_ttl_secs: 90 * 86_400,         // 90 days
+            month_ttl_secs: 10 * 365 * 86_400, // ~10 years — effectively forever
         }
     }
 }
@@ -117,7 +117,13 @@ pub async fn run(
     }
 }
 
-async fn persist_bucket(storage: &Storage, ns: &[u8], bucket: &Bucket, bucket_start_ns: i64, ttl_secs: u32) -> anyhow::Result<()> {
+async fn persist_bucket(
+    storage: &Storage,
+    ns: &[u8],
+    bucket: &Bucket,
+    bucket_start_ns: i64,
+    ttl_secs: u32,
+) -> anyhow::Result<()> {
     for (field, sketch) in bucket {
         let key = rollup_key(bucket_start_ns, field);
         let value = sketch.to_bytes()?;
@@ -141,7 +147,9 @@ pub async fn merge_up(
     let mut merged: Bucket = HashMap::new();
 
     for (key, value) in all {
-        let Some((bucket_start_ns, field)) = decode_rollup_key(&key) else { continue };
+        let Some((bucket_start_ns, field)) = decode_rollup_key(&key) else {
+            continue;
+        };
         if bucket_start_ns < window_start_ns || bucket_start_ns >= window_end_ns {
             continue;
         }
@@ -179,5 +187,8 @@ pub fn decode_rollup_key(key: &[u8]) -> Option<(i64, String)> {
 }
 
 fn now_ns() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as i64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as i64
 }

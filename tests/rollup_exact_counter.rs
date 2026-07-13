@@ -38,7 +38,11 @@ async fn exact_rollup_persists_minute_bucket_and_does_not_block_ingest() {
     let field_kinds = HashMap::from([("level".to_string(), RollupKind::Exact)]);
 
     let bucket_duration = Duration::from_millis(100);
-    let rollup = pierre::rollup::spawn(storage.clone(), field_kinds, tiers_with_minute(bucket_duration));
+    let rollup = pierre::rollup::spawn(
+        storage.clone(),
+        field_kinds,
+        tiers_with_minute(bucket_duration),
+    );
 
     for level in ["error", "error", "info"] {
         let mut fields = BTreeMap::new();
@@ -48,16 +52,25 @@ async fn exact_rollup_persists_minute_bucket_and_does_not_block_ingest() {
             message: "x".to_string(),
             fields,
         };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None).await.unwrap();
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+            .await
+            .unwrap();
     }
 
-    assert_eq!(rollup.dropped_count(), 0, "channel has ample capacity; nothing should be dropped");
+    assert_eq!(
+        rollup.dropped_count(),
+        0,
+        "channel has ample capacity; nothing should be dropped"
+    );
 
     // Wait past the first bucket boundary so the worker flushes it.
     tokio::time::sleep(bucket_duration * 3).await;
 
     let all = storage.prefix(ROLLUP_MINUTE_NS, &[]).await.unwrap();
-    assert!(!all.is_empty(), "a minute bucket should have been persisted");
+    assert!(
+        !all.is_empty(),
+        "a minute bucket should have been persisted"
+    );
 
     let counts = exact_counts(&all[0].1);
     assert_eq!(counts.get("error"), Some(&2));
@@ -78,7 +91,10 @@ async fn full_rollup_channel_drops_and_counts_instead_of_blocking() {
         rollup.record("level".to_string(), "spam".to_string());
     }
 
-    assert!(rollup.dropped_count() > 0, "overflowing the bounded channel must increment the drop counter");
+    assert!(
+        rollup.dropped_count() > 0,
+        "overflowing the bounded channel must increment the drop counter"
+    );
 }
 
 #[tokio::test]
@@ -105,8 +121,14 @@ async fn minute_buckets_merge_into_hour_tier_algebraically() {
     for _ in 0..2 {
         let mut fields = BTreeMap::new();
         fields.insert("level".to_string(), "error".to_string());
-        let wire = WireRecord { timestamp_ns: 1, message: "x".to_string(), fields };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None).await.unwrap();
+        let wire = WireRecord {
+            timestamp_ns: 1,
+            message: "x".to_string(),
+            fields,
+        };
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+            .await
+            .unwrap();
         tokio::time::sleep(minute_duration).await;
     }
 
@@ -114,13 +136,19 @@ async fn minute_buckets_merge_into_hour_tier_algebraically() {
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     let hour_buckets = storage.prefix(ROLLUP_HOUR_NS, &[]).await.unwrap();
-    assert!(!hour_buckets.is_empty(), "hour tier should contain a merged bucket");
+    assert!(
+        !hour_buckets.is_empty(),
+        "hour tier should contain a merged bucket"
+    );
 
     let total: u64 = hour_buckets
         .iter()
         .map(|(_, value)| exact_counts(value).get("error").copied().unwrap_or(0))
         .sum();
-    assert_eq!(total, 2, "hour tier must reflect the sum of the merged minute buckets, not a recomputation");
+    assert_eq!(
+        total, 2,
+        "hour tier must reflect the sum of the merged minute buckets, not a recomputation"
+    );
 }
 
 #[tokio::test]
@@ -131,21 +159,37 @@ async fn topk_rollup_survives_noise_through_the_full_ingest_path() {
     let field_kinds = HashMap::from([("path".to_string(), RollupKind::TopK)]);
 
     let bucket_duration = Duration::from_millis(100);
-    let rollup = pierre::rollup::spawn(storage.clone(), field_kinds, tiers_with_minute(bucket_duration));
+    let rollup = pierre::rollup::spawn(
+        storage.clone(),
+        field_kinds,
+        tiers_with_minute(bucket_duration),
+    );
 
     // One heavily-hit path plus 50 one-off noise paths — capacity is 20, so the
     // heavy hitter must survive eviction pressure from the noise.
     for _ in 0..200 {
         let mut fields = BTreeMap::new();
         fields.insert("path".to_string(), "/api/orders".to_string());
-        let wire = WireRecord { timestamp_ns: 1, message: "x".to_string(), fields };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None).await.unwrap();
+        let wire = WireRecord {
+            timestamp_ns: 1,
+            message: "x".to_string(),
+            fields,
+        };
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+            .await
+            .unwrap();
     }
     for i in 0..50 {
         let mut fields = BTreeMap::new();
         fields.insert("path".to_string(), format!("/noise/{i}"));
-        let wire = WireRecord { timestamp_ns: 1, message: "x".to_string(), fields };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None).await.unwrap();
+        let wire = WireRecord {
+            timestamp_ns: 1,
+            message: "x".to_string(),
+            fields,
+        };
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+            .await
+            .unwrap();
     }
 
     tokio::time::sleep(bucket_duration * 3).await;
@@ -155,7 +199,11 @@ async fn topk_rollup_survives_noise_through_the_full_ingest_path() {
 
     let sketch = FieldSketch::from_bytes(&all[0].1).unwrap();
     let top = sketch.top_k(1).unwrap();
-    assert_eq!(top[0], ("/api/orders".to_string(), 200), "the true heavy hitter must survive 50 one-off noise paths");
+    assert_eq!(
+        top[0],
+        ("/api/orders".to_string(), 200),
+        "the true heavy hitter must survive 50 one-off noise paths"
+    );
 }
 
 #[tokio::test]
@@ -166,13 +214,23 @@ async fn ddsketch_rollup_estimates_p99_through_the_full_ingest_path() {
     let field_kinds = HashMap::from([("latency_ms".to_string(), RollupKind::DDSketch)]);
 
     let bucket_duration = Duration::from_millis(100);
-    let rollup = pierre::rollup::spawn(storage.clone(), field_kinds, tiers_with_minute(bucket_duration));
+    let rollup = pierre::rollup::spawn(
+        storage.clone(),
+        field_kinds,
+        tiers_with_minute(bucket_duration),
+    );
 
     for i in 1..=1000 {
         let mut fields = BTreeMap::new();
         fields.insert("latency_ms".to_string(), i.to_string());
-        let wire = WireRecord { timestamp_ns: 1, message: "x".to_string(), fields };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None).await.unwrap();
+        let wire = WireRecord {
+            timestamp_ns: 1,
+            message: "x".to_string(),
+            fields,
+        };
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+            .await
+            .unwrap();
     }
 
     tokio::time::sleep(bucket_duration * 3).await;
@@ -187,7 +245,9 @@ async fn ddsketch_rollup_estimates_p99_through_the_full_ingest_path() {
     let all = storage.prefix(ROLLUP_MINUTE_NS, &[]).await.unwrap();
     let mut sketch: Option<FieldSketch> = None;
     for (key, value) in all {
-        let Some((_, field)) = pierre::rollup::worker::decode_rollup_key(&key) else { continue };
+        let Some((_, field)) = pierre::rollup::worker::decode_rollup_key(&key) else {
+            continue;
+        };
         if field != "latency_ms" {
             continue;
         }
@@ -199,7 +259,10 @@ async fn ddsketch_rollup_estimates_p99_through_the_full_ingest_path() {
     }
     let sketch = sketch.expect("at least one minute bucket must exist for latency_ms");
     let p99 = sketch.quantile(0.99).unwrap();
-    assert!((980.0..1000.0).contains(&p99), "p99 estimate {p99} should be within ~1% of the true p99 (990)");
+    assert!(
+        (980.0..1000.0).contains(&p99),
+        "p99 estimate {p99} should be within ~1% of the true p99 (990)"
+    );
 }
 
 #[tokio::test]
@@ -210,15 +273,25 @@ async fn hll_rollup_estimates_distinct_values_through_the_full_ingest_path() {
     let field_kinds = HashMap::from([("user_id".to_string(), RollupKind::Hll)]);
 
     let bucket_duration = Duration::from_millis(100);
-    let rollup = pierre::rollup::spawn(storage.clone(), field_kinds, tiers_with_minute(bucket_duration));
+    let rollup = pierre::rollup::spawn(
+        storage.clone(),
+        field_kinds,
+        tiers_with_minute(bucket_duration),
+    );
 
     // 200 distinct users, each appearing twice — cardinality should read ~200, not 400.
     for i in 0..200 {
         for _ in 0..2 {
             let mut fields = BTreeMap::new();
             fields.insert("user_id".to_string(), format!("user-{i}"));
-            let wire = WireRecord { timestamp_ns: 1, message: "x".to_string(), fields };
-            pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None).await.unwrap();
+            let wire = WireRecord {
+                timestamp_ns: 1,
+                message: "x".to_string(),
+                fields,
+            };
+            pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+                .await
+                .unwrap();
         }
     }
 
@@ -229,5 +302,8 @@ async fn hll_rollup_estimates_distinct_values_through_the_full_ingest_path() {
 
     let mut sketch = FieldSketch::from_bytes(&all[0].1).unwrap();
     let estimate = sketch.hll_estimate().unwrap();
-    assert!((170.0..230.0).contains(&estimate), "estimate {estimate} should be close to 200 distinct users, not 400");
+    assert!(
+        (170.0..230.0).contains(&estimate),
+        "estimate {estimate} should be close to 200 distinct users, not 400"
+    );
 }

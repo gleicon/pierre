@@ -80,8 +80,14 @@ impl Default for PierreConfig {
             loki_listen_addr: "127.0.0.1:3100".to_string(),
             query_listen_addr: "127.0.0.1:3101".to_string(),
             rollup: vec![
-                RollupDef { field: "level".to_string(), kind: RollupKind::Exact },
-                RollupDef { field: "status".to_string(), kind: RollupKind::Exact },
+                RollupDef {
+                    field: "level".to_string(),
+                    kind: RollupKind::Exact,
+                },
+                RollupDef {
+                    field: "status".to_string(),
+                    kind: RollupKind::Exact,
+                },
             ],
             rollup_minute_ttl_secs: 3600,
             backup: BackupConfig::None,

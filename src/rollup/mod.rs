@@ -40,7 +40,11 @@ impl RollupHandle {
 
 /// Spawns the rollup worker for the given field→kind mapping, maintaining all four
 /// tiers (minute/hour/day/month) per `tiers`.
-pub fn spawn(storage: Arc<Storage>, field_kinds: HashMap<String, RollupKind>, tiers: TierConfig) -> RollupHandle {
+pub fn spawn(
+    storage: Arc<Storage>,
+    field_kinds: HashMap<String, RollupKind>,
+    tiers: TierConfig,
+) -> RollupHandle {
     let (sender, receiver) = mpsc::channel(1024);
     let dropped = Arc::new(AtomicU64::new(0));
     tokio::spawn(worker::run(receiver, storage, field_kinds, tiers));

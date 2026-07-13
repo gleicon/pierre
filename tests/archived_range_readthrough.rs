@@ -16,20 +16,31 @@ async fn plain_range_reads_through_to_archived_only_data() {
     let remote_dir = tempfile::tempdir().unwrap();
 
     {
-        let remote = edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
-        let storage = Storage::open_with_remote(source_dir.path(), Box::new(remote)).await.unwrap();
+        let remote =
+            edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
+        let storage = Storage::open_with_remote(source_dir.path(), Box::new(remote))
+            .await
+            .unwrap();
 
         let mut fields = BTreeMap::new();
         fields.insert("level".to_string(), "error".to_string());
-        let wire = WireRecord { timestamp_ns: 1_000_000_000, message: "archived-only record".to_string(), fields };
-        pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None).await.unwrap();
+        let wire = WireRecord {
+            timestamp_ns: 1_000_000_000,
+            message: "archived-only record".to_string(),
+            fields,
+        };
+        pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None)
+            .await
+            .unwrap();
 
         let meta = storage.flush_to_segments().await.unwrap();
         storage.archive_segments(vec![meta.clone()]).await.unwrap();
 
         let record = pierre::backup::ArchivedSegmentRecord::new(meta);
         let bytes = serde_json::to_vec(&vec![record]).unwrap();
-        tokio::fs::write(source_dir.path().join("archived_segments.json"), bytes).await.unwrap();
+        tokio::fs::write(source_dir.path().join("archived_segments.json"), bytes)
+            .await
+            .unwrap();
     }
 
     // Fresh Storage, zero local data, same remote. Register the archived segments
@@ -38,8 +49,11 @@ async fn plain_range_reads_through_to_archived_only_data() {
     // which segments are archived; it doesn't auto-discover them from the remote
     // store). No query_archived_range call — just the plain method every caller uses.
     let fresh_dir = tempfile::tempdir().unwrap();
-    let remote_b = edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
-    let fresh_storage = Storage::open_with_remote(fresh_dir.path(), Box::new(remote_b)).await.unwrap();
+    let remote_b =
+        edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
+    let fresh_storage = Storage::open_with_remote(fresh_dir.path(), Box::new(remote_b))
+        .await
+        .unwrap();
 
     let archived_records = pierre::backup::load_archived_meta(source_dir.path()).await;
     let restored = archived_records
@@ -55,7 +69,11 @@ async fn plain_range_reads_through_to_archived_only_data() {
     let dat_files_before = count_dat_files(fresh_dir.path());
 
     let results = fresh_storage.range(0, 2_000_000_000).await.unwrap();
-    assert_eq!(results.len(), 1, "plain range() should read through to archived data with no bespoke workaround needed");
+    assert_eq!(
+        results.len(),
+        1,
+        "plain range() should read through to archived data with no bespoke workaround needed"
+    );
     assert_eq!(results[0].message, "archived-only record");
 
     let dat_files_after = count_dat_files(fresh_dir.path());
@@ -67,6 +85,11 @@ async fn plain_range_reads_through_to_archived_only_data() {
 
 fn count_dat_files(dir: &std::path::Path) -> usize {
     std::fs::read_dir(dir)
-        .map(|entries| entries.flatten().filter(|e| e.path().extension().is_some_and(|ext| ext == "dat")).count())
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().extension().is_some_and(|ext| ext == "dat"))
+                .count()
+        })
         .unwrap_or(0)
 }

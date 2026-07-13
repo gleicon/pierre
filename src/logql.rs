@@ -15,8 +15,12 @@ pub struct ParsedQuery {
 /// exactly one parser for this syntax.
 pub fn parse_label_set(s: &str) -> Result<BTreeMap<String, String>, String> {
     let s = s.trim();
-    let open = s.find('{').ok_or_else(|| "label set must start with '{', e.g. {level=\"error\"}".to_string())?;
-    let close = s.find('}').ok_or_else(|| "unterminated label set — missing '}'".to_string())?;
+    let open = s
+        .find('{')
+        .ok_or_else(|| "label set must start with '{', e.g. {level=\"error\"}".to_string())?;
+    let close = s
+        .find('}')
+        .ok_or_else(|| "unterminated label set — missing '}'".to_string())?;
     if close < open {
         return Err("malformed label set".to_string());
     }
@@ -27,8 +31,9 @@ pub fn parse_label_set(s: &str) -> Result<BTreeMap<String, String>, String> {
         if pair.is_empty() {
             continue;
         }
-        let (key, rest) =
-            pair.split_once('=').ok_or_else(|| format!("malformed label term {pair:?}, expected key=\"value\""))?;
+        let (key, rest) = pair
+            .split_once('=')
+            .ok_or_else(|| format!("malformed label term {pair:?}, expected key=\"value\""))?;
         let value = rest
             .trim()
             .strip_prefix('"')
@@ -41,7 +46,9 @@ pub fn parse_label_set(s: &str) -> Result<BTreeMap<String, String>, String> {
 
 pub fn parse(query: &str) -> Result<ParsedQuery, String> {
     let query = query.trim();
-    let close = query.find('}').ok_or_else(|| "unterminated label selector — missing `}`".to_string())?;
+    let close = query
+        .find('}')
+        .ok_or_else(|| "unterminated label selector — missing `}`".to_string())?;
     let selector = parse_label_set(&query[..=close])?;
 
     let remainder = query[close + 1..].trim();
@@ -50,7 +57,9 @@ pub fn parse(query: &str) -> Result<ParsedQuery, String> {
     } else {
         let after_op = remainder
             .strip_prefix("|=")
-            .ok_or_else(|| format!("unsupported line-filter operator (only `|=` is supported): {remainder:?}"))?
+            .ok_or_else(|| {
+                format!("unsupported line-filter operator (only `|=` is supported): {remainder:?}")
+            })?
             .trim();
         let text = after_op
             .strip_prefix('"')
@@ -59,7 +68,10 @@ pub fn parse(query: &str) -> Result<ParsedQuery, String> {
         Some(text.to_string())
     };
 
-    Ok(ParsedQuery { selector, line_filter })
+    Ok(ParsedQuery {
+        selector,
+        line_filter,
+    })
 }
 
 #[cfg(test)]
@@ -77,7 +89,10 @@ mod tests {
     fn parses_multiple_selector_terms() {
         let parsed = parse(r#"{level="error", service="payments"}"#).unwrap();
         assert_eq!(parsed.selector.len(), 2);
-        assert_eq!(parsed.selector.get("service"), Some(&"payments".to_string()));
+        assert_eq!(
+            parsed.selector.get("service"),
+            Some(&"payments".to_string())
+        );
     }
 
     #[test]

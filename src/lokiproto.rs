@@ -27,7 +27,8 @@ pub struct DecodedStream {
 const MAX_DECOMPRESSED_BYTES: usize = 64 * 1024 * 1024;
 
 pub fn decode_push_request(body: &[u8]) -> anyhow::Result<Vec<DecodedStream>> {
-    let claimed_len = snap::raw::decompress_len(body).map_err(|e| anyhow::anyhow!("invalid snappy header: {e}"))?;
+    let claimed_len = snap::raw::decompress_len(body)
+        .map_err(|e| anyhow::anyhow!("invalid snappy header: {e}"))?;
     if claimed_len > MAX_DECOMPRESSED_BYTES {
         anyhow::bail!("snappy payload claims {claimed_len} decompressed bytes, exceeding the {MAX_DECOMPRESSED_BYTES} limit");
     }

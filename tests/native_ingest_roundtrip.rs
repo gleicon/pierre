@@ -13,7 +13,10 @@ use pierre::storage::Storage;
 async fn send_batch(addr: &str, batch: &[WireRecord]) -> u8 {
     let payload = serde_json::to_vec(batch).unwrap();
     let mut stream = TcpStream::connect(addr).await.unwrap();
-    stream.write_all(&(payload.len() as u32).to_be_bytes()).await.unwrap();
+    stream
+        .write_all(&(payload.len() as u32).to_be_bytes())
+        .await
+        .unwrap();
     stream.write_all(&payload).await.unwrap();
     let mut ack = [0u8; 1];
     stream.read_exact(&mut ack).await.unwrap();
@@ -35,9 +38,16 @@ async fn native_write_is_durable_and_immediately_readable() {
     let fields_for_server = allowed_fields.clone();
     let addr_clone = addr.clone();
     tokio::spawn(async move {
-        listener::native::serve(&addr_clone, storage_for_server, fields_for_server, None, None, pierre::stats::IngestStats::default())
-            .await
-            .unwrap();
+        listener::native::serve(
+            &addr_clone,
+            storage_for_server,
+            fields_for_server,
+            None,
+            None,
+            pierre::stats::IngestStats::default(),
+        )
+        .await
+        .unwrap();
     });
     // Give the listener a moment to bind.
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -58,21 +68,30 @@ async fn native_write_is_durable_and_immediately_readable() {
     // Immediately readable via the query path, no async delay.
     let mut filter = BTreeMap::new();
     filter.insert("level".to_string(), "error".to_string());
-    let results = query::select(&storage, 0, 2_000_000_000, &filter).await.unwrap();
+    let results = query::select(&storage, 0, 2_000_000_000, &filter)
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].message, "request 500 failed after 42ms");
-    assert_eq!(results[0].fields.get("trace_id"), Some(&"abc123".to_string()));
+    assert_eq!(
+        results[0].fields.get("trace_id"),
+        Some(&"abc123".to_string())
+    );
     assert!(results[0].template_id != 0);
 
     // A query outside the time range must not match.
-    let none = query::select(&storage, 0, 500_000_000, &filter).await.unwrap();
+    let none = query::select(&storage, 0, 500_000_000, &filter)
+        .await
+        .unwrap();
     assert!(none.is_empty());
 
     // A selector that doesn't match must not return the record.
     let mut wrong_filter = BTreeMap::new();
     wrong_filter.insert("level".to_string(), "info".to_string());
-    let none2 = query::select(&storage, 0, 2_000_000_000, &wrong_filter).await.unwrap();
+    let none2 = query::select(&storage, 0, 2_000_000_000, &wrong_filter)
+        .await
+        .unwrap();
     assert!(none2.is_empty());
 }
 
@@ -94,14 +113,26 @@ async fn oversized_length_prefix_is_rejected_before_allocating() {
 
     let addr_for_server = addr.clone();
     tokio::spawn(async move {
-        listener::native::serve(&addr_for_server, storage, allowed_fields, None, None, pierre::stats::IngestStats::default()).await.unwrap();
+        listener::native::serve(
+            &addr_for_server,
+            storage,
+            allowed_fields,
+            None,
+            None,
+            pierre::stats::IngestStats::default(),
+        )
+        .await
+        .unwrap();
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let mut stream = TcpStream::connect(&addr).await.unwrap();
     // Claim a frame just over u32::MAX / 4 — comfortably past any real batch, and
     // this connection never sends a matching payload.
-    stream.write_all(&(2_000_000_000u32).to_be_bytes()).await.unwrap();
+    stream
+        .write_all(&(2_000_000_000u32).to_be_bytes())
+        .await
+        .unwrap();
 
     // The server must respond (nack) or close the connection quickly, without
     // waiting to read bytes that were never sent.
@@ -136,12 +167,23 @@ async fn frame_length_prefix_exactly_at_the_limit_is_accepted() {
 
     let addr_for_server = addr.clone();
     tokio::spawn(async move {
-        let _ = listener::native::serve(&addr_for_server, storage, allowed_fields, None, None, pierre::stats::IngestStats::default()).await;
+        let _ = listener::native::serve(
+            &addr_for_server,
+            storage,
+            allowed_fields,
+            None,
+            None,
+            pierre::stats::IngestStats::default(),
+        )
+        .await;
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let mut stream = TcpStream::connect(&addr).await.unwrap();
-    stream.write_all(&(16 * 1024 * 1024u32).to_be_bytes()).await.unwrap();
+    stream
+        .write_all(&(16 * 1024 * 1024u32).to_be_bytes())
+        .await
+        .unwrap();
 
     let result = tokio::time::timeout(Duration::from_millis(300), async {
         let mut buf = [0u8; 1];
@@ -163,16 +205,23 @@ async fn unconfigured_fields_are_dropped_at_ingest() {
 
     let mut fields = BTreeMap::new();
     fields.insert("level".to_string(), "warn".to_string());
-    fields.insert("not_configured".to_string(), "should be dropped".to_string());
+    fields.insert(
+        "not_configured".to_string(),
+        "should be dropped".to_string(),
+    );
 
     let wire = WireRecord {
         timestamp_ns: 42,
         message: "hello world".to_string(),
         fields,
     };
-    pierre::ingest::commit(&storage, wire, &allowed_fields, None, None).await.unwrap();
+    pierre::ingest::commit(&storage, wire, &allowed_fields, None, None)
+        .await
+        .unwrap();
 
-    let results = query::select(&storage, 0, 1000, &BTreeMap::new()).await.unwrap();
+    let results = query::select(&storage, 0, 1000, &BTreeMap::new())
+        .await
+        .unwrap();
     assert_eq!(results.len(), 1);
     assert!(results[0].fields.contains_key("level"));
     assert!(!results[0].fields.contains_key("not_configured"));

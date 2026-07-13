@@ -19,16 +19,28 @@ struct AppState {
     textindex_bucket_duration: Duration,
 }
 
-pub fn router(storage: Arc<Storage>, textindex_bucket_duration: Duration, auth_tokens: AuthTokens) -> Router {
+pub fn router(
+    storage: Arc<Storage>,
+    textindex_bucket_duration: Duration,
+    auth_tokens: AuthTokens,
+) -> Router {
     let router = Router::new()
         .route("/query/logs", get(logs_handler))
         .route("/query/search", get(search_handler))
         .route("/query/aggregate", get(aggregate_handler))
-        .with_state(AppState { storage, textindex_bucket_duration });
+        .with_state(AppState {
+            storage,
+            textindex_bucket_duration,
+        });
     crate::auth::layer(router, auth_tokens)
 }
 
-pub async fn serve(addr: &str, storage: Arc<Storage>, textindex_bucket_duration: Duration, auth_tokens: AuthTokens) -> anyhow::Result<()> {
+pub async fn serve(
+    addr: &str,
+    storage: Arc<Storage>,
+    textindex_bucket_duration: Duration,
+    auth_tokens: AuthTokens,
+) -> anyhow::Result<()> {
     let app = router(storage, textindex_bucket_duration, auth_tokens);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
@@ -66,7 +78,9 @@ async fn search_handler(
     Query(params): Query<BTreeMap<String, String>>,
 ) -> Result<Json<Vec<SearchHit>>, (StatusCode, String)> {
     let (start_ns, end_ns) = parse_range(&params)?;
-    let query_text = params.get("q").ok_or((StatusCode::BAD_REQUEST, "missing `q` param".to_string()))?;
+    let query_text = params
+        .get("q")
+        .ok_or((StatusCode::BAD_REQUEST, "missing `q` param".to_string()))?;
     let k: usize = params
         .get("k")
         .map(|s| s.parse())
@@ -74,14 +88,25 @@ async fn search_handler(
         .map_err(|_| (StatusCode::BAD_REQUEST, "invalid `k` param".to_string()))?
         .unwrap_or(10);
 
-    let results = textindex::search(&state.storage, start_ns, end_ns, state.textindex_bucket_duration, query_text, k)
-        .await
-        .map_err(|e| {
-            // "narrow the time range" is textindex::search's bucket-count-limit bail
-            // message — a client-fixable input error, not a server fault.
-            let status = if e.to_string().contains("narrow the time range") { StatusCode::BAD_REQUEST } else { StatusCode::INTERNAL_SERVER_ERROR };
-            (status, e.to_string())
-        })?;
+    let results = textindex::search(
+        &state.storage,
+        start_ns,
+        end_ns,
+        state.textindex_bucket_duration,
+        query_text,
+        k,
+    )
+    .await
+    .map_err(|e| {
+        // "narrow the time range" is textindex::search's bucket-count-limit bail
+        // message — a client-fixable input error, not a server fault.
+        let status = if e.to_string().contains("narrow the time range") {
+            StatusCode::BAD_REQUEST
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        };
+        (status, e.to_string())
+    })?;
 
     let mut hits = Vec::with_capacity(results.len());
     for r in results {
@@ -90,7 +115,10 @@ async fn search_handler(
             .get_record(&r.doc_id)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        hits.push(SearchHit { record, score: r.score });
+        hits.push(SearchHit {
+            record,
+            score: r.score,
+        });
     }
     Ok(Json(hits))
 }
@@ -111,23 +139,32 @@ async fn aggregate_handler(
     Query(params): Query<BTreeMap<String, String>>,
 ) -> Result<Json<AggregateResponse>, (StatusCode, String)> {
     let (start_ns, end_ns) = parse_range(&params)?;
-    let field = params.get("field").ok_or((StatusCode::BAD_REQUEST, "missing `field` param".to_string()))?;
+    let field = params
+        .get("field")
+        .ok_or((StatusCode::BAD_REQUEST, "missing `field` param".to_string()))?;
     let op = params.get("op").map(String::as_str).unwrap_or("count");
 
     let mut sketch = aggregate::merged_sketch(&state.storage, field, start_ns, end_ns)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or((StatusCode::NOT_FOUND, format!("no rollup data for field {field:?} in range")))?;
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            format!("no rollup data for field {field:?} in range"),
+        ))?;
 
     match op {
         "count" => {
-            let counts = sketch.exact_counts().ok_or((StatusCode::BAD_REQUEST, "field is not an exact-counter rollup".to_string()))?;
+            let counts = sketch.exact_counts().ok_or((
+                StatusCode::BAD_REQUEST,
+                "field is not an exact-counter rollup".to_string(),
+            ))?;
             Ok(Json(AggregateResponse::Count(counts)))
         }
         "cardinality" => {
-            let estimate = sketch
-                .hll_estimate()
-                .ok_or((StatusCode::BAD_REQUEST, "field is not an hll rollup".to_string()))?;
+            let estimate = sketch.hll_estimate().ok_or((
+                StatusCode::BAD_REQUEST,
+                "field is not an hll rollup".to_string(),
+            ))?;
             Ok(Json(AggregateResponse::Cardinality(estimate)))
         }
         "topk" => {
@@ -137,16 +174,25 @@ async fn aggregate_handler(
                 .transpose()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "invalid `k` param".to_string()))?
                 .unwrap_or(10);
-            let top = sketch.top_k(k).ok_or((StatusCode::BAD_REQUEST, "field is not a topk rollup".to_string()))?;
+            let top = sketch.top_k(k).ok_or((
+                StatusCode::BAD_REQUEST,
+                "field is not a topk rollup".to_string(),
+            ))?;
             Ok(Json(AggregateResponse::TopK(top)))
         }
         "quantile" => {
             let q: f64 = params
                 .get("q")
-                .ok_or((StatusCode::BAD_REQUEST, "missing `q` param for quantile".to_string()))?
+                .ok_or((
+                    StatusCode::BAD_REQUEST,
+                    "missing `q` param for quantile".to_string(),
+                ))?
                 .parse()
                 .map_err(|_| (StatusCode::BAD_REQUEST, "invalid `q` param".to_string()))?;
-            let value = sketch.quantile(q).ok_or((StatusCode::BAD_REQUEST, "field is not a ddsketch rollup".to_string()))?;
+            let value = sketch.quantile(q).ok_or((
+                StatusCode::BAD_REQUEST,
+                "field is not a ddsketch rollup".to_string(),
+            ))?;
             Ok(Json(AggregateResponse::Quantile(value)))
         }
         other => Err((StatusCode::BAD_REQUEST, format!("unknown op {other:?}"))),

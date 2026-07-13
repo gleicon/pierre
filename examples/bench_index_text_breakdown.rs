@@ -11,8 +11,11 @@ async fn main() {
     for &n in &[10_000usize, 100_000, 300_000] {
         let dir = tempfile::tempdir().unwrap();
         let remote_dir = tempfile::tempdir().unwrap();
-        let remote = edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
-        let storage = Storage::open_with_remote(dir.path(), Box::new(remote)).await.unwrap();
+        let remote =
+            edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
+        let storage = Storage::open_with_remote(dir.path(), Box::new(remote))
+            .await
+            .unwrap();
 
         // Measure indexing throughput in two halves of the run: first 10% vs last
         // 10%. If per-call cost still scaled with corpus size, the back half would
@@ -22,19 +25,28 @@ async fn main() {
         let front_start = Instant::now();
         for i in 0..front_n {
             let text = format!("request {i} completed in {}ms with status ok", i % 500);
-            storage.index_text(b"bench_ns", format!("doc-{i:08}").as_bytes(), &text).await.unwrap();
+            storage
+                .index_text(b"bench_ns", format!("doc-{i:08}").as_bytes(), &text)
+                .await
+                .unwrap();
         }
         let front_elapsed = front_start.elapsed();
 
         for i in front_n..n - front_n {
             let text = format!("request {i} completed in {}ms with status ok", i % 500);
-            storage.index_text(b"bench_ns", format!("doc-{i:08}").as_bytes(), &text).await.unwrap();
+            storage
+                .index_text(b"bench_ns", format!("doc-{i:08}").as_bytes(), &text)
+                .await
+                .unwrap();
         }
 
         let back_start = Instant::now();
         for i in n - front_n..n {
             let text = format!("request {i} completed in {}ms with status ok", i % 500);
-            storage.index_text(b"bench_ns", format!("doc-{i:08}").as_bytes(), &text).await.unwrap();
+            storage
+                .index_text(b"bench_ns", format!("doc-{i:08}").as_bytes(), &text)
+                .await
+                .unwrap();
         }
         let back_elapsed = back_start.elapsed();
 

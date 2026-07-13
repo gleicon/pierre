@@ -42,7 +42,9 @@ pub fn layer<S>(router: Router<S>, tokens: AuthTokens) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
-    router.layer(middleware::from_fn(require_bearer_token)).layer(Extension(tokens))
+    router
+        .layer(middleware::from_fn(require_bearer_token))
+        .layer(Extension(tokens))
 }
 
 async fn require_bearer_token(

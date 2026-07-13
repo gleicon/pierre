@@ -12,7 +12,10 @@ fn real_pierre_toml_parses_correctly() {
     assert_eq!(config.native_listen_addr, "127.0.0.1:4317");
     assert_eq!(config.loki_listen_addr, "127.0.0.1:3100");
     assert_eq!(config.query_listen_addr, "127.0.0.1:3101");
-    assert_eq!(config.fields, vec!["level", "status", "trace_id", "latency_ms", "path"]);
+    assert_eq!(
+        config.fields,
+        vec!["level", "status", "trace_id", "latency_ms", "path"]
+    );
 
     assert_eq!(config.rollup.len(), 5);
     assert_eq!(config.rollup[0].field, "level");
@@ -47,7 +50,11 @@ prefix = "prod/"
 "#;
     let config: PierreConfig = toml::from_str(toml_str).unwrap();
     match config.backup {
-        pierre::backup::BackupConfig::S3 { bucket, prefix, endpoint } => {
+        pierre::backup::BackupConfig::S3 {
+            bucket,
+            prefix,
+            endpoint,
+        } => {
             assert_eq!(bucket, "my-pierre-logs");
             assert_eq!(prefix, Some("prod/".to_string()));
             assert_eq!(endpoint, None);

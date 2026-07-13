@@ -40,7 +40,10 @@ impl Storage {
 
     /// Same as `open`, but with an explicit `RemoteStore` backend (e.g. S3 per config)
     /// instead of the local-disk default.
-    pub async fn open_with_remote(data_dir: &Path, remote: Box<dyn RemoteStore>) -> anyhow::Result<Self> {
+    pub async fn open_with_remote(
+        data_dir: &Path,
+        remote: Box<dyn RemoteStore>,
+    ) -> anyhow::Result<Self> {
         Self::open_with_options(data_dir, remote, DEFAULT_COHORT_WINDOW_SECS, false).await
     }
 
@@ -65,7 +68,13 @@ impl Storage {
         std::fs::create_dir_all(data_dir)?;
         let mut config = EdgestoreConfig::new(data_dir);
         config.cohort_window_secs = cohort_window_secs;
-        let engine = AsyncTieredEngine::open_with_options(config, remote, false, strip_text_index_after_archive).await?;
+        let engine = AsyncTieredEngine::open_with_options(
+            config,
+            remote,
+            false,
+            strip_text_index_after_archive,
+        )
+        .await?;
         Ok(Storage {
             engine,
             data_dir: data_dir.to_path_buf(),
@@ -134,7 +143,13 @@ impl Storage {
 
     /// Generic namespaced write with TTL — used by rollup tiers (FR-21) to persist
     /// via write-time cohorting instead of a periodic scan-and-delete job.
-    pub async fn put_with_ttl(&self, ns: &[u8], key: &[u8], value: &[u8], ttl_secs: u32) -> anyhow::Result<()> {
+    pub async fn put_with_ttl(
+        &self,
+        ns: &[u8],
+        key: &[u8],
+        value: &[u8],
+        ttl_secs: u32,
+    ) -> anyhow::Result<()> {
         self.engine.put_with_ttl(ns, key, value, ttl_secs).await?;
         Ok(())
     }
@@ -148,7 +163,11 @@ impl Storage {
 
     /// Generic namespaced prefix scan, used by rollup tier-merge reads. Reads through
     /// to archived segments overlapping the prefix range (see `range()`'s doc).
-    pub async fn prefix(&self, ns: &[u8], prefix: &[u8]) -> anyhow::Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    pub async fn prefix(
+        &self,
+        ns: &[u8],
+        prefix: &[u8],
+    ) -> anyhow::Result<Vec<(Vec<u8>, Vec<u8>)>> {
         Ok(self.engine.prefix(ns, prefix).await?)
     }
 
@@ -200,12 +219,19 @@ impl Storage {
 
     /// Indexes a document for BM25 full-text search under the given namespace (FR-10).
     pub async fn index_text(&self, ns: &[u8], key: &[u8], text: &str) -> anyhow::Result<()> {
-        self.engine.index_text(ns, key, text, HashMap::new()).await?;
+        self.engine
+            .index_text(ns, key, text, HashMap::new())
+            .await?;
         Ok(())
     }
 
     /// Searches a single BM25 namespace for the top-`k` matches (FR-14). Local only.
-    pub async fn search_text(&self, ns: &[u8], query: &str, k: usize) -> anyhow::Result<Vec<TextSearchResult>> {
+    pub async fn search_text(
+        &self,
+        ns: &[u8],
+        query: &str,
+        k: usize,
+    ) -> anyhow::Result<Vec<TextSearchResult>> {
         Ok(self.engine.search_text(ns, query, k).await?)
     }
 
@@ -257,7 +283,12 @@ mod tests {
     fn random_suffixes_are_practically_always_distinct() {
         // Not a formal guarantee (still probabilistic) — a sanity check that
         // rand::random::<u64>() isn't somehow degenerate (e.g. always zero).
-        let suffixes: std::collections::HashSet<u64> = (0..100_000).map(|_| rand::random::<u64>()).collect();
-        assert_eq!(suffixes.len(), 100_000, "100K random u64s should not collide with each other");
+        let suffixes: std::collections::HashSet<u64> =
+            (0..100_000).map(|_| rand::random::<u64>()).collect();
+        assert_eq!(
+            suffixes.len(),
+            100_000,
+            "100K random u64s should not collide with each other"
+        );
     }
 }

@@ -1,5 +1,7 @@
 use crate::rollup::sketch::FieldSketch;
-use crate::rollup::worker::{decode_rollup_key, ROLLUP_DAY_NS, ROLLUP_HOUR_NS, ROLLUP_MINUTE_NS, ROLLUP_MONTH_NS};
+use crate::rollup::worker::{
+    decode_rollup_key, ROLLUP_DAY_NS, ROLLUP_HOUR_NS, ROLLUP_MINUTE_NS, ROLLUP_MONTH_NS,
+};
 use crate::storage::Storage;
 
 const HOUR_NS: i64 = 3_600_000_000_000;
@@ -32,7 +34,9 @@ pub async fn merged_sketch(
     let all = storage.prefix(ns, &[]).await?;
     let mut merged: Option<FieldSketch> = None;
     for (key, value) in all {
-        let Some((bucket_start_ns, bucket_field)) = decode_rollup_key(&key) else { continue };
+        let Some((bucket_start_ns, bucket_field)) = decode_rollup_key(&key) else {
+            continue;
+        };
         if bucket_field != field || bucket_start_ns < start_ns || bucket_start_ns >= end_ns {
             continue;
         }

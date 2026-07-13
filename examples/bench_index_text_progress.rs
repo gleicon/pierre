@@ -11,8 +11,11 @@ use pierre::storage::Storage;
 async fn main() {
     let dir = tempfile::tempdir().unwrap();
     let remote_dir = tempfile::tempdir().unwrap();
-    let remote = edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
-    let storage = Storage::open_with_remote(dir.path(), Box::new(remote)).await.unwrap();
+    let remote =
+        edgestore_repl::FilesystemRemoteStore::new(remote_dir.path().to_path_buf()).unwrap();
+    let storage = Storage::open_with_remote(dir.path(), Box::new(remote))
+        .await
+        .unwrap();
 
     let checkpoint = 50_000usize;
     let total = 1_000_000usize;
@@ -21,7 +24,10 @@ async fn main() {
 
     for i in 0..total {
         let text = format!("request {i} completed in {}ms with status ok", i % 500);
-        storage.index_text(b"bench_ns", format!("doc-{i:08}").as_bytes(), &text).await.unwrap();
+        storage
+            .index_text(b"bench_ns", format!("doc-{i:08}").as_bytes(), &text)
+            .await
+            .unwrap();
 
         if (i + 1) % checkpoint == 0 {
             let checkpoint_elapsed = checkpoint_start.elapsed();

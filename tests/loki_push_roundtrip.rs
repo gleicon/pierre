@@ -14,7 +14,14 @@ async fn loki_push_lands_in_the_same_store_as_native() {
     let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
     let allowed_fields = Arc::new(vec!["level".to_string()]);
 
-    let app = loki::router(storage.clone(), allowed_fields, None, None, pierre::auth::AuthTokens::new(vec![]), pierre::stats::IngestStats::default());
+    let app = loki::router(
+        storage.clone(),
+        allowed_fields,
+        None,
+        None,
+        pierre::auth::AuthTokens::new(vec![]),
+        pierre::stats::IngestStats::default(),
+    );
 
     let body = serde_json::json!({
         "streams": [
@@ -39,7 +46,9 @@ async fn loki_push_lands_in_the_same_store_as_native() {
 
     let mut filter = BTreeMap::new();
     filter.insert("level".to_string(), "error".to_string());
-    let results = query::select(&storage, 0, 2_000_000_000, &filter).await.unwrap();
+    let results = query::select(&storage, 0, 2_000_000_000, &filter)
+        .await
+        .unwrap();
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].message, "boom 500 after 42ms");

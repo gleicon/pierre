@@ -10,7 +10,9 @@ use pierre::storage::Storage;
 use tower::ServiceExt;
 
 async fn body_json(response: axum::response::Response) -> serde_json::Value {
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes).unwrap()
 }
 
@@ -22,10 +24,20 @@ async fn logs_endpoint_answers_selector_and_time_range() {
 
     let mut fields = BTreeMap::new();
     fields.insert("level".to_string(), "error".to_string());
-    let wire = WireRecord { timestamp_ns: 1_000_000_000, message: "boom".to_string(), fields };
-    pierre::ingest::commit(&storage, wire, &allowed_fields, None, None).await.unwrap();
+    let wire = WireRecord {
+        timestamp_ns: 1_000_000_000,
+        message: "boom".to_string(),
+        fields,
+    };
+    pierre::ingest::commit(&storage, wire, &allowed_fields, None, None)
+        .await
+        .unwrap();
 
-    let app = pierre::listener::query_api::router(storage.clone(), Duration::from_secs(3600), pierre::auth::AuthTokens::new(vec![]));
+    let app = pierre::listener::query_api::router(
+        storage.clone(),
+        Duration::from_secs(3600),
+        pierre::auth::AuthTokens::new(vec![]),
+    );
 
     let req = Request::builder()
         .uri("/query/logs?start=0&end=2000000000&level=error")
@@ -52,11 +64,22 @@ async fn logs_endpoint_answers_selector_and_time_range() {
 async fn logs_endpoint_rejects_missing_range_params() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
-    let app = pierre::listener::query_api::router(storage, Duration::from_secs(3600), pierre::auth::AuthTokens::new(vec![]));
+    let app = pierre::listener::query_api::router(
+        storage,
+        Duration::from_secs(3600),
+        pierre::auth::AuthTokens::new(vec![]),
+    );
 
-    let req = Request::builder().uri("/query/logs?start=0").body(Body::empty()).unwrap();
+    let req = Request::builder()
+        .uri("/query/logs?start=0")
+        .body(Body::empty())
+        .unwrap();
     let response = app.oneshot(req).await.unwrap();
-    assert_eq!(response.status(), 400, "missing `end` must be a client error, not a 500 or silent empty result");
+    assert_eq!(
+        response.status(),
+        400,
+        "missing `end` must be a client error, not a 500 or silent empty result"
+    );
 }
 
 #[tokio::test]
@@ -64,17 +87,24 @@ async fn search_endpoint_returns_full_record_for_each_hit() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
     let bucket_duration = Duration::from_secs(3600);
-    let (textindex, _worker) = pierre::textindex::spawn(storage.clone(), bucket_duration, Duration::from_millis(50));
+    let (textindex, _worker) =
+        pierre::textindex::spawn(storage.clone(), bucket_duration, Duration::from_millis(50));
 
     let wire = WireRecord {
         timestamp_ns: 1_000_000_000,
         message: "payment gateway timeout detected".to_string(),
         fields: BTreeMap::new(),
     };
-    pierre::ingest::commit(&storage, wire, &[], None, Some(&textindex)).await.unwrap();
+    pierre::ingest::commit(&storage, wire, &[], None, Some(&textindex))
+        .await
+        .unwrap();
     tokio::time::sleep(Duration::from_millis(150)).await;
 
-    let app = pierre::listener::query_api::router(storage, bucket_duration, pierre::auth::AuthTokens::new(vec![]));
+    let app = pierre::listener::query_api::router(
+        storage,
+        bucket_duration,
+        pierre::auth::AuthTokens::new(vec![]),
+    );
     let req = Request::builder()
         .uri("/query/search?start=0&end=2000000000&q=timeout&k=10")
         .body(Body::empty())
@@ -84,7 +114,10 @@ async fn search_endpoint_returns_full_record_for_each_hit() {
     let json = body_json(response).await;
     let hits = json.as_array().unwrap();
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0]["record"]["message"], "payment gateway timeout detected");
+    assert_eq!(
+        hits[0]["record"]["message"],
+        "payment gateway timeout detected"
+    );
 }
 
 #[tokio::test]
@@ -108,8 +141,14 @@ async fn aggregate_endpoint_serves_exact_count_from_rollup_sketch() {
     for level in ["error", "error", "info"] {
         let mut fields = BTreeMap::new();
         fields.insert("level".to_string(), level.to_string());
-        let wire = WireRecord { timestamp_ns: 1, message: "x".to_string(), fields };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None).await.unwrap();
+        let wire = WireRecord {
+            timestamp_ns: 1,
+            message: "x".to_string(),
+            fields,
+        };
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+            .await
+            .unwrap();
     }
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -119,10 +158,21 @@ async fn aggregate_endpoint_serves_exact_count_from_rollup_sketch() {
     // timestamp. Keep the span within the minute-tier routing threshold (<= 1 hour,
     // see aggregate::merged_sketch) — that's the only tier this test's short sleep
     // gives time to populate (hour/day/month ticks are on a 1-hour timer here).
-    let app = pierre::listener::query_api::router(storage, Duration::from_secs(3600), pierre::auth::AuthTokens::new(vec![]));
-    let now_ns = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as i64;
+    let app = pierre::listener::query_api::router(
+        storage,
+        Duration::from_secs(3600),
+        pierre::auth::AuthTokens::new(vec![]),
+    );
+    let now_ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as i64;
     let req = Request::builder()
-        .uri(format!("/query/aggregate?field=level&start={}&end={}&op=count", now_ns - 10_000_000_000, now_ns + 10_000_000_000))
+        .uri(format!(
+            "/query/aggregate?field=level&start={}&end={}&op=count",
+            now_ns - 10_000_000_000,
+            now_ns + 10_000_000_000
+        ))
         .body(Body::empty())
         .unwrap();
     let response = app.oneshot(req).await.unwrap();
@@ -136,7 +186,11 @@ async fn aggregate_endpoint_serves_exact_count_from_rollup_sketch() {
 async fn aggregate_endpoint_404s_when_no_rollup_data_in_range() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
-    let app = pierre::listener::query_api::router(storage, Duration::from_secs(3600), pierre::auth::AuthTokens::new(vec![]));
+    let app = pierre::listener::query_api::router(
+        storage,
+        Duration::from_secs(3600),
+        pierre::auth::AuthTokens::new(vec![]),
+    );
 
     let req = Request::builder()
         .uri("/query/aggregate?field=level&start=0&end=1000&op=count")

@@ -28,7 +28,12 @@ impl IngestStats {
 /// same worker-loop shape as `backup::spawn`/`rollup::spawn`. `dropped_count()` is
 /// cumulative, so each tick logs the running total, not a delta; ingest rate is a
 /// delta computed from the previous tick's count.
-pub fn spawn(stats: IngestStats, rollup: Option<RollupHandle>, textindex: Option<TextIndexHandle>, interval: Duration) {
+pub fn spawn(
+    stats: IngestStats,
+    rollup: Option<RollupHandle>,
+    textindex: Option<TextIndexHandle>,
+    interval: Duration,
+) {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(interval);
         let mut last_committed = 0u64;
@@ -38,8 +43,14 @@ pub fn spawn(stats: IngestStats, rollup: Option<RollupHandle>, textindex: Option
             let rate = (committed - last_committed) as f64 / interval.as_secs_f64();
             last_committed = committed;
 
-            let rollup_dropped = rollup.as_ref().map(RollupHandle::dropped_count).unwrap_or(0);
-            let textindex_dropped = textindex.as_ref().map(TextIndexHandle::dropped_count).unwrap_or(0);
+            let rollup_dropped = rollup
+                .as_ref()
+                .map(RollupHandle::dropped_count)
+                .unwrap_or(0);
+            let textindex_dropped = textindex
+                .as_ref()
+                .map(TextIndexHandle::dropped_count)
+                .unwrap_or(0);
             log::info!(
                 "stats: ingest={committed} total, {rate:.1} rec/s | rollup dropped={rollup_dropped} | textindex dropped={textindex_dropped}"
             );
