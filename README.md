@@ -1,6 +1,9 @@
 # Pierre
 
 [![CI](https://github.com/gleicon/pierre/actions/workflows/ci.yml/badge.svg)](https://github.com/gleicon/pierre/actions/workflows/ci.yml)
+[![OSV-Scanner](https://github.com/gleicon/pierre/actions/workflows/osv-scanner.yml/badge.svg)](https://github.com/gleicon/pierre/actions/workflows/osv-scanner.yml)
+[![crates.io](https://img.shields.io/crates/v/pierre.svg)](https://crates.io/crates/pierre)
+[![docs.rs](https://docs.rs/pierre/badge.svg)](https://docs.rs/pierre)
 
 <img src="assets/pierre-mascot.jpg" alt="Pierre" width="400">
 
