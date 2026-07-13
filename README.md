@@ -1,5 +1,7 @@
 # Pierre
 
+<img src="assets/pierre-mascot.jpg" alt="Pierre" width="400">
+
 A single-binary log indexer, in Rust, built on [edgestore](https://github.com/gleicon/edgestore) (an
 embedded Rust KV/LSM engine developed alongside it). No separate service, no RPC, no network hop
 between ingest, storage, full-text search, and aggregation — one process, one deployable unit.
