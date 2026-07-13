@@ -1,5 +1,7 @@
 # Pierre
 
+[![CI](https://github.com/gleicon/pierre/actions/workflows/ci.yml/badge.svg)](https://github.com/gleicon/pierre/actions/workflows/ci.yml)
+
 <img src="assets/pierre-mascot.jpg" alt="Pierre" width="400">
 
 A single-binary log indexer, in Rust, built on [edgestore](https://github.com/gleicon/edgestore) (an
