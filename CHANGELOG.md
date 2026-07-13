@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-13
+
+### Fixed
+
+- `v0.1.0`'s tag-triggered release published a GitHub Release with no actual binaries —
+  `build-local-artifacts` was silently skipped by the CI workflow (root cause not fully
+  confirmed; a fresh tag was the fastest path to an unambiguous release rather than continued
+  guessing at a `gh run rerun` vs. genuine condition-evaluation confound). `v0.1.0`'s release
+  page and tag are left as-is (not deleted) — this entry documents why it shouldn't be used.
+- CI (`.github/workflows/ci.yml`) was missing a `protoc` install step — `build.rs` needs it for
+  `prost-build` to compile `proto/logproto.proto`, and it isn't bundled on GitHub's runners by
+  default.
+
 ## [0.1.0] - 2026-07-13
 
 First tagged release. All v1 functional requirements in `SPEC.md` are built and verified —
