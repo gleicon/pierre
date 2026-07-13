@@ -15,6 +15,12 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # build.rs uses prost-build to compile proto/logproto.proto — needs a real
+      # protoc, not bundled with the runner (see build.rs's own error message).
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build (lib, bin, tests, examples)
         run: cargo build --tests --examples
 
