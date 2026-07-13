@@ -94,7 +94,9 @@ If you're not watching the terminal live, redirect to a file and `tail -f` it, o
   something goes wrong here, the existing pipeline keeps working regardless.
 - Known gaps that don't block this deployment, for context (see `STATUS.md` for the full
   list): no cold-tier BM25 index stripping yet (disk-cost optimization, not correctness), no
-  metrics/observability surface beyond the stats line above, no clustering/replica mode.
+  clustering/replica mode. `GET /metrics` (Prometheus text format, same counters as the stats
+  log line) is available on the query API port if you want to point a scraper at it instead of
+  tailing logs — same auth as the rest of that surface.
 
 ## After the event
 

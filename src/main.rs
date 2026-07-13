@@ -97,16 +97,19 @@ async fn main() -> anyhow::Result<()> {
         &config.loki_listen_addr,
         storage.clone(),
         allowed_fields,
-        rollup,
-        Some(textindex),
+        rollup.clone(),
+        Some(textindex.clone()),
         auth_tokens.clone(),
-        stats,
+        stats.clone(),
     );
     let query_api = listener::query_api::serve(
         &config.query_listen_addr,
         storage,
         textindex_bucket_duration,
         auth_tokens,
+        stats,
+        rollup,
+        Some(textindex),
     );
     tokio::try_join!(native, loki, query_api)?;
     Ok(())

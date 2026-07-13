@@ -31,6 +31,8 @@ criteria, [`STATUS.md`](STATUS.md) for what's built and verified vs. still missi
 - **Storage**: hot (WAL/memtable) → warm (local BM25-indexed segments) → archived (S3 or
   filesystem, configurable), with TTL-based retention and optional local-disk pruning after
   archival.
+- **Metrics**: `GET /metrics` (Prometheus text exposition format) — ingest rate and the
+  rollup/textindex drop counters, same auth as the rest of the query API.
 
 ## Quickstart
 

@@ -159,5 +159,9 @@ warning; not recommended to enable until the upstream WAL/strip interaction is f
 
 **Not started at all:** anything past what's in `PLAN.md`/`DECISIONS.md` — there's no
 vector/similarity search (HNSW was looked at only as a future-idea reference, never
-adopted), no clustering/HA story, no multi-tenant isolation, no metrics/observability
-surface for Pierre's own health (dogfooding its own ingest for itself is not wired up).
+adopted), no clustering/HA story, no multi-tenant isolation. Pierre does now expose
+`GET /metrics` (Prometheus text exposition format, same three counters as the periodic
+stats log line — ingest total, rollup/textindex dropped) on the query API surface, but
+this is deliberately minimal: no latency histograms, no per-endpoint request counts, no
+Grafana dashboard shipped for it. Dogfooding Pierre's own ingest for its own operational
+logs is still not wired up.

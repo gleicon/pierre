@@ -19,7 +19,7 @@ impl IngestStats {
         self.committed.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn committed_count(&self) -> u64 {
+    pub fn committed_count(&self) -> u64 {
         self.committed.load(Ordering::Relaxed)
     }
 }

@@ -12,7 +12,14 @@ use tower::ServiceExt;
 async fn no_configured_tokens_means_auth_is_off() {
     let dir = tempfile::tempdir().unwrap();
     let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
-    let app = query_api::router(storage, Duration::from_secs(3600), AuthTokens::new(vec![]));
+    let app = query_api::router(
+        storage,
+        Duration::from_secs(3600),
+        AuthTokens::new(vec![]),
+        pierre::stats::IngestStats::default(),
+        None,
+        None,
+    );
 
     let req = Request::builder()
         .uri("/query/logs?start=0&end=1")
@@ -34,6 +41,9 @@ async fn configured_tokens_reject_missing_authorization_header() {
         storage,
         Duration::from_secs(3600),
         AuthTokens::new(vec!["secret-token".to_string()]),
+        pierre::stats::IngestStats::default(),
+        None,
+        None,
     );
 
     let req = Request::builder()
@@ -52,6 +62,9 @@ async fn configured_tokens_reject_wrong_token() {
         storage,
         Duration::from_secs(3600),
         AuthTokens::new(vec!["secret-token".to_string()]),
+        pierre::stats::IngestStats::default(),
+        None,
+        None,
     );
 
     let req = Request::builder()
@@ -71,6 +84,9 @@ async fn configured_tokens_accept_the_correct_token() {
         storage,
         Duration::from_secs(3600),
         AuthTokens::new(vec!["secret-token".to_string()]),
+        pierre::stats::IngestStats::default(),
+        None,
+        None,
     );
 
     let req = Request::builder()

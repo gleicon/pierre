@@ -1,8 +1,13 @@
 [package]
 name = "pierre"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 repository = "https://github.com/gleicon/pierre"
+license = "MIT"
+description = "A single-binary log indexer in Rust: real full-text search, tiered storage, and pre-computed aggregations, built on the edgestore embedded storage engine."
+readme = "README.md"
+keywords = ["logs", "logging", "search", "observability", "database"]
+categories = ["database-implementations", "command-line-utilities"]
 
 [lib]
 name = "pierre"

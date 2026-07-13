@@ -10,27 +10,40 @@ use serde::Serialize;
 
 use crate::auth::AuthTokens;
 use crate::listener::parse_range;
+use crate::rollup::RollupHandle;
+use crate::stats::IngestStats;
 use crate::storage::Storage;
+use crate::textindex::TextIndexHandle;
 use crate::{aggregate, query, textindex};
 
 #[derive(Clone)]
 struct AppState {
     storage: Arc<Storage>,
     textindex_bucket_duration: Duration,
+    stats: IngestStats,
+    rollup: Option<RollupHandle>,
+    textindex_handle: Option<TextIndexHandle>,
 }
 
 pub fn router(
     storage: Arc<Storage>,
     textindex_bucket_duration: Duration,
     auth_tokens: AuthTokens,
+    stats: IngestStats,
+    rollup: Option<RollupHandle>,
+    textindex_handle: Option<TextIndexHandle>,
 ) -> Router {
     let router = Router::new()
         .route("/query/logs", get(logs_handler))
         .route("/query/search", get(search_handler))
         .route("/query/aggregate", get(aggregate_handler))
+        .route("/metrics", get(metrics_handler))
         .with_state(AppState {
             storage,
             textindex_bucket_duration,
+            stats,
+            rollup,
+            textindex_handle,
         });
     crate::auth::layer(router, auth_tokens)
 }
@@ -40,8 +53,18 @@ pub async fn serve(
     storage: Arc<Storage>,
     textindex_bucket_duration: Duration,
     auth_tokens: AuthTokens,
+    stats: IngestStats,
+    rollup: Option<RollupHandle>,
+    textindex_handle: Option<TextIndexHandle>,
 ) -> anyhow::Result<()> {
-    let app = router(storage, textindex_bucket_duration, auth_tokens);
+    let app = router(
+        storage,
+        textindex_bucket_duration,
+        auth_tokens,
+        stats,
+        rollup,
+        textindex_handle,
+    );
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
@@ -197,4 +220,41 @@ async fn aggregate_handler(
         }
         other => Err((StatusCode::BAD_REQUEST, format!("unknown op {other:?}"))),
     }
+}
+
+/// `GET /metrics` — Prometheus text exposition format (same counters as the
+/// periodic stats log line, see `stats.rs`), so a scraper gets the same live
+/// signal without tailing logs. Deliberately just the three counters that
+/// already exist; not a general observability surface.
+async fn metrics_handler(
+    State(state): State<AppState>,
+) -> (StatusCode, [(&'static str, &'static str); 1], String) {
+    let ingest_total = state.stats.committed_count();
+    let rollup_dropped = state
+        .rollup
+        .as_ref()
+        .map(RollupHandle::dropped_count)
+        .unwrap_or(0);
+    let textindex_dropped = state
+        .textindex_handle
+        .as_ref()
+        .map(TextIndexHandle::dropped_count)
+        .unwrap_or(0);
+
+    let body = format!(
+        "# HELP pierre_ingest_records_total Total records committed via ingest.\n\
+         # TYPE pierre_ingest_records_total counter\n\
+         pierre_ingest_records_total {ingest_total}\n\
+         # HELP pierre_rollup_dropped_total Total rollup contributions dropped because the channel was full.\n\
+         # TYPE pierre_rollup_dropped_total counter\n\
+         pierre_rollup_dropped_total {rollup_dropped}\n\
+         # HELP pierre_textindex_dropped_total Total textindex contributions dropped because the channel was full.\n\
+         # TYPE pierre_textindex_dropped_total counter\n\
+         pierre_textindex_dropped_total {textindex_dropped}\n"
+    );
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; version=0.0.4")],
+        body,
+    )
 }

@@ -37,6 +37,9 @@ async fn logs_endpoint_answers_selector_and_time_range() {
         storage.clone(),
         Duration::from_secs(3600),
         pierre::auth::AuthTokens::new(vec![]),
+        pierre::stats::IngestStats::default(),
+        None,
+        None,
     );
 
     let req = Request::builder()
@@ -68,6 +71,9 @@ async fn logs_endpoint_rejects_missing_range_params() {
         storage,
         Duration::from_secs(3600),
         pierre::auth::AuthTokens::new(vec![]),
+        pierre::stats::IngestStats::default(),
+        None,
+        None,
     );
 
     let req = Request::builder()
@@ -104,6 +110,9 @@ async fn search_endpoint_returns_full_record_for_each_hit() {
         storage,
         bucket_duration,
         pierre::auth::AuthTokens::new(vec![]),
+        pierre::stats::IngestStats::default(),
+        None,
+        None,
     );
     let req = Request::builder()
         .uri("/query/search?start=0&end=2000000000&q=timeout&k=10")
@@ -162,6 +171,9 @@ async fn aggregate_endpoint_serves_exact_count_from_rollup_sketch() {
         storage,
         Duration::from_secs(3600),
         pierre::auth::AuthTokens::new(vec![]),
+        pierre::stats::IngestStats::default(),
+        None,
+        None,
     );
     let now_ns = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -190,6 +202,9 @@ async fn aggregate_endpoint_404s_when_no_rollup_data_in_range() {
         storage,
         Duration::from_secs(3600),
         pierre::auth::AuthTokens::new(vec![]),
+        pierre::stats::IngestStats::default(),
+        None,
+        None,
     );
 
     let req = Request::builder()
@@ -198,4 +213,61 @@ async fn aggregate_endpoint_404s_when_no_rollup_data_in_range() {
         .unwrap();
     let response = app.oneshot(req).await.unwrap();
     assert_eq!(response.status(), 404);
+}
+
+/// `/metrics` reports the same counters the periodic stats log line does — proves
+/// the real `IngestStats`/`RollupHandle`/`TextIndexHandle` passed to the router are
+/// what gets read, not a fresh/disconnected instance.
+#[tokio::test]
+async fn metrics_endpoint_reports_real_counters() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
+
+    let stats = pierre::stats::IngestStats::default();
+    stats.record_commit();
+    stats.record_commit();
+    stats.record_commit();
+
+    let field_kinds = HashMap::from([("level".to_string(), RollupKind::Exact)]);
+    let mut tiers = pierre::rollup::worker::TierConfig::production_defaults();
+    tiers.minute_ttl_secs = 3600;
+    let rollup = pierre::rollup::spawn(storage.clone(), field_kinds, tiers);
+    // Channel capacity is 1024 (see rollup_exact_counter.rs); flooding it far past
+    // that is the established, deterministic way to get a real dropped_count() > 0
+    // without racing a worker's drain timing.
+    for _ in 0..5000 {
+        rollup.record("level".to_string(), "spam".to_string());
+    }
+
+    let app = pierre::listener::query_api::router(
+        storage,
+        Duration::from_secs(3600),
+        pierre::auth::AuthTokens::new(vec![]),
+        stats,
+        Some(rollup),
+        None,
+    );
+
+    let req = Request::builder()
+        .uri("/metrics")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), 200);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(
+        body.contains("pierre_ingest_records_total 3"),
+        "expected ingest total of 3, got:\n{body}"
+    );
+    assert!(
+        !body.contains("pierre_rollup_dropped_total 0"),
+        "flooding the channel must show up as a real non-zero drop count, got:\n{body}"
+    );
+    assert!(
+        body.contains("pierre_textindex_dropped_total 0"),
+        "no textindex handle was passed, dropped count must default to 0:\n{body}"
+    );
 }
