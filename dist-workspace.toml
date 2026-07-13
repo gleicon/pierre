@@ -11,3 +11,12 @@ ci = "github"
 installers = []
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+
+# build.rs uses prost-build to compile proto/logproto.proto — needs a real protoc,
+# not bundled on any of dist's CI runners by default (confirmed by v0.1.1's first
+# release attempt failing identically on both Linux and macOS runners).
+[dist.dependencies.apt]
+protobuf-compiler = "*"
+
+[dist.dependencies.homebrew]
+protobuf = "*"
