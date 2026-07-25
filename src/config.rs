@@ -22,6 +22,12 @@ pub struct PierreConfig {
     /// no pipeline change. Default matches Elasticsearch's own conventional port
     /// (9200) so an existing shipper config often only needs a host change.
     pub es_bulk_listen_addr: String,
+    /// Syslog RFC5424 ingest (PRD v0.2 Block C), both UDP and TCP on the same
+    /// address. Defaults to 5514, not the real syslog port 514 — binding <1024
+    /// needs root/CAP_NET_BIND_SERVICE on most systems, which Pierre's own binary
+    /// shouldn't require just to start. Forward 514 to this port, or override to
+    /// 514 directly when running with the right privileges.
+    pub syslog_listen_addr: String,
     pub fields: Vec<String>,
     /// Declarative rollup definitions (FR-22) — add a field/kind pair, no code change.
     pub rollup: Vec<RollupDef>,
@@ -85,6 +91,7 @@ impl Default for PierreConfig {
             loki_listen_addr: "127.0.0.1:3100".to_string(),
             query_listen_addr: "127.0.0.1:3101".to_string(),
             es_bulk_listen_addr: "127.0.0.1:9200".to_string(),
+            syslog_listen_addr: "127.0.0.1:5514".to_string(),
             rollup: vec![
                 RollupDef {
                     field: "level".to_string(),

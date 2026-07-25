@@ -5,6 +5,10 @@ native_listen_addr = "127.0.0.1:4317"
 loki_listen_addr = "127.0.0.1:3100"
 query_listen_addr = "127.0.0.1:3101"
 es_bulk_listen_addr = "127.0.0.1:9200"
+# Syslog RFC5424, UDP + TCP on the same address. Defaults to 5514, not the real
+# syslog port 514 (binding <1024 needs root/CAP_NET_BIND_SERVICE) — forward 514
+# to this port, or override to 514 directly when running with the right privileges.
+syslog_listen_addr = "127.0.0.1:5514"
 fields = ["level", "status", "trace_id", "latency_ms", "path"]
 rollup_minute_ttl_secs = 3600
 hot_to_warm_flush_interval_secs = 300

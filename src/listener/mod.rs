@@ -2,6 +2,7 @@ pub mod es_bulk;
 pub mod loki;
 pub mod native;
 pub mod query_api;
+pub mod syslog;
 
 use std::collections::BTreeMap;
 
