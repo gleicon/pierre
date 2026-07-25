@@ -1,6 +1,7 @@
 pub mod es_bulk;
 pub mod loki;
 pub mod native;
+pub mod otlp;
 pub mod query_api;
 pub mod syslog;
 

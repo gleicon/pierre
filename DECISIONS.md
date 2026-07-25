@@ -213,3 +213,15 @@ Resolving the open questions and ambiguities in `pierre-prd-v02-amendment.md` (a
 **Why:** A hard removal breaks every existing deployment (including the just-completed real demo deployment this config was written for) and turns a design improvement into a breaking migration. Matches D-1's actual spirit — "no knob a novice has to get right," not "no knob at all for an operator who knows what they want."
 
 **Status: done.**
+
+## M1 execution — scope calls made while implementing (2026-07-25)
+
+Three real implementation decisions surfaced while actually building ES `_bulk`, syslog RFC5424, and OTLP logs (Block C, greenlit in the PRD grill-me session above). None were worth a separate interview round — each was a bounded, reversible engineering call, not a product-direction question — but are recorded here since they're the kind of thing worth knowing before touching this code again.
+
+**OTLP gRPC port default is 4327, not the OTel-conventional 4317.** Pierre's native protocol already claims 4317 in the same process (`native_listen_addr`), so OTLP gRPC couldn't reuse it — two listeners can't bind the same port in one process. Not a real-world problem: OTel exporters always require an explicit endpoint configuration anyway (no SDK "magically" finds 4317 without being told), so an operator pointing a real OTel SDK/Collector at Pierre sets the endpoint either way.
+
+**OTLP/JSON is a deliberate scope cut, not an oversight.** Only `POST /v1/logs` with `Content-Type: application/x-protobuf` is accepted; a JSON body gets a clear 415. OTLP/JSON needs its own field-casing (lowerCamelCase) and bytes-encoding (base64) rules distinct from what `prost`'s generated types carry via `serde_json`'s default derive — real additional work for the less common of OTLP/HTTP's two content types (most OTLP/HTTP exporters default to protobuf). Revisit if a real user needs it.
+
+**tonic 0.14 forced a project-wide `prost` 0.13→0.14 bump.** tonic's gRPC codegen (`tonic-prost-build`) requires `prost`/`prost-types` 0.14; Pierre's existing Loki proto compilation (`prost-build`, unrelated to gRPC) got bumped alongside it for consistency. Verified this doesn't conflict with edgestore's own dependency resolution (`cargo build` succeeded end-to-end with no version conflicts) before writing any new code on top of it.
+
+**Status: done — es_bulk, syslog, otlp all shipped and verified against real running binaries (real gRPC client, real curl protobuf POST, real UDP/TCP sockets, real NDJSON).**

@@ -114,6 +114,22 @@ async fn main() -> anyhow::Result<()> {
     let syslog = listener::syslog::serve(
         &config.syslog_listen_addr,
         storage.clone(),
+        allowed_fields.clone(),
+        rollup.clone(),
+        Some(textindex.clone()),
+        stats.clone(),
+    );
+    let otlp_grpc = listener::otlp::serve_grpc(
+        &config.otlp_grpc_listen_addr,
+        storage.clone(),
+        allowed_fields.clone(),
+        rollup.clone(),
+        Some(textindex.clone()),
+        stats.clone(),
+    );
+    let otlp_http = listener::otlp::serve_http(
+        &config.otlp_http_listen_addr,
+        storage.clone(),
         allowed_fields,
         rollup.clone(),
         Some(textindex.clone()),
@@ -128,6 +144,6 @@ async fn main() -> anyhow::Result<()> {
         rollup,
         Some(textindex),
     );
-    tokio::try_join!(native, loki, es_bulk, syslog, query_api)?;
+    tokio::try_join!(native, loki, es_bulk, syslog, otlp_grpc, otlp_http, query_api)?;
     Ok(())
 }

@@ -9,6 +9,14 @@ es_bulk_listen_addr = "127.0.0.1:9200"
 # syslog port 514 (binding <1024 needs root/CAP_NET_BIND_SERVICE) — forward 514
 # to this port, or override to 514 directly when running with the right privileges.
 syslog_listen_addr = "127.0.0.1:5514"
+# OTLP logs. gRPC is the primary transport (most exporters default to it); not
+# the OTel-conventional 4317 since native_listen_addr already claims that port
+# in this same process — set your exporter's endpoint explicitly either way.
+otlp_grpc_listen_addr = "127.0.0.1:4327"
+# OTLP/HTTP, POST /v1/logs, protobuf body only (application/x-protobuf) — OTLP/JSON
+# is a deliberate scope cut, see src/listener/otlp.rs. Default matches the real
+# OTLP/HTTP conventional port (4318).
+otlp_http_listen_addr = "127.0.0.1:4318"
 fields = ["level", "status", "trace_id", "latency_ms", "path"]
 rollup_minute_ttl_secs = 3600
 hot_to_warm_flush_interval_secs = 300

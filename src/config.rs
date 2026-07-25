@@ -28,6 +28,16 @@ pub struct PierreConfig {
     /// shouldn't require just to start. Forward 514 to this port, or override to
     /// 514 directly when running with the right privileges.
     pub syslog_listen_addr: String,
+    /// OTLP logs, gRPC transport (PRD v0.2 Block C) — the primary OTLP transport
+    /// (most exporters default to gRPC over HTTP). Not the OTel-conventional 4317:
+    /// Pierre's own native protocol already claims that port in this same process,
+    /// so an operator pointing a real OTel SDK/Collector at Pierre sets its
+    /// exporter endpoint explicitly either way — normal practice regardless.
+    pub otlp_grpc_listen_addr: String,
+    /// OTLP logs, HTTP transport (`POST /v1/logs`, protobuf body only — see
+    /// `listener/otlp.rs` for why OTLP/JSON is a deliberate scope cut). Default
+    /// matches the real OTLP/HTTP conventional port (4318), unclaimed elsewhere.
+    pub otlp_http_listen_addr: String,
     pub fields: Vec<String>,
     /// Declarative rollup definitions (FR-22) — add a field/kind pair, no code change.
     pub rollup: Vec<RollupDef>,
@@ -92,6 +102,8 @@ impl Default for PierreConfig {
             query_listen_addr: "127.0.0.1:3101".to_string(),
             es_bulk_listen_addr: "127.0.0.1:9200".to_string(),
             syslog_listen_addr: "127.0.0.1:5514".to_string(),
+            otlp_grpc_listen_addr: "127.0.0.1:4327".to_string(),
+            otlp_http_listen_addr: "127.0.0.1:4318".to_string(),
             rollup: vec![
                 RollupDef {
                     field: "level".to_string(),

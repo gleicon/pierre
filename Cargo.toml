@@ -32,14 +32,17 @@ env_logger = "0.11"
 axum = "0.8"
 hyperloglogplus = "0.4.1"
 sketches-ddsketch = { version = "0.4.0", features = ["use_serde"] }
-prost = "0.13"
-prost-types = "0.13"
+prost = "0.14"
+prost-types = "0.14"
 snap = "1"
 rand = "0.8"
 jiff = { version = "0.2", default-features = false, features = ["std"] }
+tonic = "0.14"
+tonic-prost = "0.14"
 
 [build-dependencies]
-prost-build = "0.13"
+prost-build = "0.14"
+tonic-prost-build = "0.14"
 
 [features]
 default = []

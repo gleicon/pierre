@@ -26,7 +26,9 @@ criteria, [`STATUS.md`](STATUS.md) for what's built and verified vs. still missi
   Fluent Bit — work with just an endpoint change, no pipeline changes), an Elasticsearch
   `_bulk`-compatible endpoint (Filebeat, Logstash, Fluent Bit's ES output, Vector's ES sink —
   same zero-collector-change story), syslog RFC5424 over UDP and TCP (appliances and legacy
-  systems that never leave), and a native framed binary protocol.
+  systems that never leave), OTLP logs over gRPC and HTTP (the real upstream protobuf schema,
+  a genuine `tonic` gRPC service — where new OpenTelemetry deployments already start), and a
+  native framed binary protocol.
 - **Query**: time-range + field-selector reads, BM25 full-text search, pre-computed aggregations
   (exact count, cardinality, top-k, quantile), and a Loki-compatible `query_range` subset so
   Grafana's Loki datasource works against it.
