@@ -17,6 +17,11 @@ pub struct PierreConfig {
     pub native_listen_addr: String,
     pub loki_listen_addr: String,
     pub query_listen_addr: String,
+    /// Elasticsearch `_bulk`-compatible ingest (PRD v0.2 Block C) — real shippers
+    /// (Filebeat, Logstash, Fluent Bit, Vector's ES sink) already speak this with
+    /// no pipeline change. Default matches Elasticsearch's own conventional port
+    /// (9200) so an existing shipper config often only needs a host change.
+    pub es_bulk_listen_addr: String,
     pub fields: Vec<String>,
     /// Declarative rollup definitions (FR-22) — add a field/kind pair, no code change.
     pub rollup: Vec<RollupDef>,
@@ -79,6 +84,7 @@ impl Default for PierreConfig {
             native_listen_addr: "127.0.0.1:4317".to_string(),
             loki_listen_addr: "127.0.0.1:3100".to_string(),
             query_listen_addr: "127.0.0.1:3101".to_string(),
+            es_bulk_listen_addr: "127.0.0.1:9200".to_string(),
             rollup: vec![
                 RollupDef {
                     field: "level".to_string(),

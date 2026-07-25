@@ -36,6 +36,7 @@ prost = "0.13"
 prost-types = "0.13"
 snap = "1"
 rand = "0.8"
+jiff = { version = "0.2", default-features = false, features = ["std"] }
 
 [build-dependencies]
 prost-build = "0.13"

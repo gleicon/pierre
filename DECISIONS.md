@@ -129,3 +129,87 @@ Pruning logic stays `RemoteStore`-agnostic (works identically whether the archiv
 **Why:** edgestore 1.1.4's built-in `range()`/`prefix()` read-through (real `ImmutableEngine`-backed ephemeral merge, local wins ties) is strictly more general than Pierre's bespoke version (which never covered `prefix()`) and is now what local segment pruning depends on anyway. Keeping both would mean two ways to reach the same data with different call conventions, for no benefit.
 
 **Status: done.**
+
+## PRD v0.2 amendment — grill-me session (2026-07-25)
+
+Resolving the open questions and ambiguities in `pierre-prd-v02-amendment.md` (agent-facing retrieval, hybrid semantic search, migration surfaces, zero-page ops). One entry per resolved decision below; each flagged as buildable in Pierre's own repo now vs. blocked on new edgestore engineering work (ENG-7 through ENG-12 in the PRD's appendix) that falls under the "don't touch edgestore, communicate instead" standing instruction from earlier this session.
+
+### Interview scope
+
+**Question:** Should this session resolve product/priority decisions across the whole PRD, including the parts blocked on edgestore work, or stay scoped to what's buildable in Pierre today?
+
+**Decision:** Whole PRD. Flag each resolved decision as buildable-now vs. blocked-on-edgestore.
+
+**Why:** Cheap to resolve as conversation now; expensive to re-run this same interview later once edgestore work lands. Keeps the plan coherent even though execution will be staged.
+
+### Sequencing: start M1 now, hold M2/M3 on edgestore
+
+**Question:** Block C (ES `_bulk`, OTLP, syslog ingest — the PRD's M1) has no edgestore dependency at all. Most of Block A (MCP server) and all of Block B (hybrid retrieval) need new edgestore work (ENG-7–12) first. Start M1 in Pierre now, or hold everything until edgestore's timeline is clearer?
+
+**Decision:** Start M1 (Block C) in Pierre now, independent of edgestore's timeline.
+
+**Why:** Real value — more shippers can point at Pierre with zero collector change — that depends on nothing unresolved. Matches the PRD's own sequencing.
+
+### edgestore stays generic — no Pierre-specific coupling, ever
+
+**Question:** How should edgestore feature requests and bugs surfaced by this PRD (ENG-7 through ENG-12) be handled, given edgestore is meant to be a reusable building block, not Pierre's private engine?
+
+**Decision:** edgestore is never modified to be Pierre-specific. Any bug found or feature needed (including the six ENG-7–12 items this PRD requires) gets written up as clear text and handed to the user directly — he decides if/how/when to build it in edgestore's own repo, on his own timeline. No edits, no backlog entries, no issues filed, no draft code — not even as a starting point — in the edgestore repository from this project's sessions.
+
+**Why:** edgestore is used by other things beyond Pierre; letting one downstream consumer's PRD shape its design directly (even for a well-motivated feature) risks exactly the coupling a shared building block must avoid. This generalizes the earlier "communicate bugs, don't fixate" rule to feature requests too.
+
+### Embedding generation placement (PRD Open Question 1)
+
+**Question:** Generate embeddings inline at ingest (adds latency + a runtime dependency to the hot path) or asynchronously post-compaction (recent data briefly keyword-only)?
+
+**Decision:** Async, reusing the exact worker-channel pattern `src/rollup/mod.rs` and `src/textindex/mod.rs` already use (bounded channel, drop-and-count on overflow, non-blocking to ingest). The embedding worker is new Pierre-side application code — a new consumer of the ingest fan-out, same shape as rollup/textindex today. Vector *storage* (ENG-7) is edgestore's job; *generating* the embedding and handing it off stays Pierre's, matching the existing split.
+
+**Why:** Matches the PRD's own stated lean ("the more defensible default") and Pierre's established architecture — no new pattern invented, no edgestore write-path change needed for this part.
+
+### Default embedding model (PRD Open Question 4)
+
+**Question:** Multilingual, or English-first/smaller with multilingual opt-in?
+
+**Decision:** `multilingual-e5-small`, matching `vectoria`'s (sibling project, same author) existing default. Not a fresh size/speed trade-off — e5-small is already the small/fast tier, so multilingual doesn't cost extra there.
+
+**Condition, not yet satisfied:** async placement (previous entry) only bounds *ingest*-path latency. Query-time embedding — embedding the search query itself before a vector lookup — is unavoidably inline on the read path, and that's exactly what the PRD's own success criteria bind (agent investigation loop within one turn budget, cold-tier p95 < 3s). This choice is provisional until query-time embedding latency is actually measured on representative hardware — matching this project's own "measured, not assumed" discipline (see STATUS.md) — not assumed acceptable just because vectoria uses it for a different workload shape (product catalogs, not ad-hoc agent queries).
+
+**Why:** Reuses a validated choice instead of a fresh evaluation, but doesn't let that reuse paper over an unmeasured latency risk on Pierre's actual query pattern.
+
+### OSS/commercial boundary (PRD Open Question 3)
+
+**Question:** Where's the line between free/OSS and paid? The PRD's own guess: org-level features (SSO, RBAC, multi-tenant isolation, retention governance), not any retrieval capability.
+
+**Decision:** Confirmed, with a sharper framing than the PRD's own phrasing: the line is *who absorbs the administrative/management overhead of running Pierre across an organization* (SSO integration, RBAC administration, multi-tenant isolation, retention governance workflows), not gated retrieval capability. MCP server, semantic search, and migration surfaces stay fully OSS — none of that is ever paywalled.
+
+**Why:** Matches the PRD's own positioning (Section 00.2: self-hosting is the moat; gating retrieval features would undercut the "why not a managed retrieval API" pitch in Section 01) and extends Block D's "zero-page infrastructure ops" premise to a parallel "zero-page organizational ops" commercial value prop — same underlying idea (Pierre/the vendor absorbs operational burden), applied to org administration instead of infra operation.
+
+### Cold-tier semantic search (PRD Open Question 2)
+
+**Decision:** Confirmed as the PRD stated — embeddings dropped at cold tier for storage economics; a quantized cold vector index is an explicit v0.3 research question, not a v0.2 commitment.
+
+### `mcpfier` and `vectoria` reuse scope
+
+**Question:** Does A-1 (MCP server) depend on `mcpfier`, and does Block B depend on `vectoria` as a real crate dependency?
+
+**Decision:** Neither is a dependency. `mcpfier` is a separate Go project, too broad/heavy for what Pierre's MCP surface actually needs — implement the MCP server directly in Pierre (Rust) instead of pulling it in. `vectoria` gets mined for techniques, smart ideas, and implementation patterns (RRF fusion approach, identifier-aware tokenizer, embedding pipeline design) — not a crate dependency, since it's a full standalone product tuned for a different domain (ecommerce catalogs: CTR feedback, multi-index namespaces) that doesn't fit logs.
+
+**Why:** Avoids coupling Pierre's release cadence and dependency surface to two unrelated products (one a different language entirely). Matches the "keep dependencies justified" discipline already established in this codebase (SPEC.md's dependency-audit constraints).
+
+### Success criteria bindingness
+
+**Question:** Are the PRD's 6 numeric M4 gates (10×–20× cost, 30-day zero-intervention soak, <5min setup, agent-loop-within-one-turn, ≥25% semantic recall lift, cold-tier p95 <3s) locked commitments or directional targets?
+
+**Decision:** Locked: the 30-day zero-intervention soak (binary outcome, explicitly a marketing asset per the PRD) and cold-tier p95 <3s (a real user-facing latency promise). Directional: cost multiplier range, semantic recall lift, and setup time — real numbers worth measuring, not release-blocking if missed by a small margin (22× instead of 20×, 23% instead of 25%).
+
+**Why:** Distinguishes objectively binary/user-facing promises from continuous metrics where a near-miss shouldn't stall shipping.
+
+### Block D-1 ("no knobs that can be set wrong") vs. existing pierre.toml tunables
+
+**Question:** Pierre's current `pierre.toml` already exposes explicit tunables (flush intervals, cohort windows, bucket durations, TTLs — the same config `RUNBOOK.md` walks through for the demo deployment). D-1 wants self-tuning from observed volume/disk instead. Remove/deprecate the existing tunables in favor of a smaller policy-only config, or keep them as overrides with self-tuning only supplying defaults when unset?
+
+**Decision:** Keep them as explicit overrides. Self-tuning supplies sensible defaults when a value is unset; an operator who wants to override still can.
+
+**Why:** A hard removal breaks every existing deployment (including the just-completed real demo deployment this config was written for) and turns a design improvement into a breaking migration. Matches D-1's actual spirit — "no knob a novice has to get right," not "no knob at all for an operator who knows what they want."
+
+**Status: done.**

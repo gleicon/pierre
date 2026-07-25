@@ -4,6 +4,7 @@ data_dir = "./pierre-data"
 native_listen_addr = "127.0.0.1:4317"
 loki_listen_addr = "127.0.0.1:3100"
 query_listen_addr = "127.0.0.1:3101"
+es_bulk_listen_addr = "127.0.0.1:9200"
 fields = ["level", "status", "trace_id", "latency_ms", "path"]
 rollup_minute_ttl_secs = 3600
 hot_to_warm_flush_interval_secs = 300

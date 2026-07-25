@@ -96,6 +96,15 @@ async fn main() -> anyhow::Result<()> {
     let loki = listener::loki::serve(
         &config.loki_listen_addr,
         storage.clone(),
+        allowed_fields.clone(),
+        rollup.clone(),
+        Some(textindex.clone()),
+        auth_tokens.clone(),
+        stats.clone(),
+    );
+    let es_bulk = listener::es_bulk::serve(
+        &config.es_bulk_listen_addr,
+        storage.clone(),
         allowed_fields,
         rollup.clone(),
         Some(textindex.clone()),
@@ -111,6 +120,6 @@ async fn main() -> anyhow::Result<()> {
         rollup,
         Some(textindex),
     );
-    tokio::try_join!(native, loki, query_api)?;
+    tokio::try_join!(native, loki, es_bulk, query_api)?;
     Ok(())
 }
