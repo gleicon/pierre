@@ -1031,9 +1031,9 @@ dependencies = [
 
 [[package]]
 name = "edgestore"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d010ab2b549f0b50a89ee755dd3465d574cd78922d755cfda084b0e46988042"
+checksum = "0e86a2ad06bebe3d55e3b9632444dc4a8bfbc9086846e37d47ef8e0f579505c7"
 dependencies = [
  "blake3",
  "byteorder",
@@ -1053,9 +1053,9 @@ dependencies = [
 
 [[package]]
 name = "edgestore-repl"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06d3858ff7a7a5302d532ec5abbd83cb770151e40b77ab58efb2b1fb9515617d"
+checksum = "1774a4ef06ce53b1950d26990121f672ceb6703ac0661fb0ee6c7c2960696c9c"
 dependencies = [
  "aws-config",
  "aws-sdk-s3",
@@ -1071,9 +1071,9 @@ dependencies = [
 
 [[package]]
 name = "edgestore-tier"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "256cae852611abee758a46682f0545bb7c8a8e5e18f01748b48714768cdc2be4"
+checksum = "d498e0f83e0c7f7d23b191d97e76f367d69a75309ce33758e352a7169195fcdd"
 dependencies = [
  "blake3",
  "edgestore",
@@ -1085,9 +1085,9 @@ dependencies = [
 
 [[package]]
 name = "edgestore-tokio"
-version = "1.4.0"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f1a55a5ffc53e96b84736928cde6e7ab90d28fb2f9bccf1e853bd5456fba090"
+checksum = "4bd59502aaf24f68228d41f8be816589bbbdd699eacd2aaa455ab25961178418"
 dependencies = [
  "edgestore",
  "edgestore-tier",
