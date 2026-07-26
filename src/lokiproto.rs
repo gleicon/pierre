@@ -49,7 +49,14 @@ pub fn decode_push_request(body: &[u8]) -> anyhow::Result<Vec<DecodedStream>> {
             .into_iter()
             .map(|entry| {
                 let ts = entry.timestamp.unwrap_or_default();
-                let timestamp_ns = ts.seconds * 1_000_000_000 + ts.nanos as i64;
+                // A client can put an arbitrary `seconds` in this protobuf field —
+                // saturating instead of a plain `*`/`+` avoids a silent wraparound
+                // (release builds have overflow checks off) landing a nonsense
+                // timestamp from a value that was never a real clock reading.
+                let timestamp_ns = ts
+                    .seconds
+                    .saturating_mul(1_000_000_000)
+                    .saturating_add(ts.nanos as i64);
                 (timestamp_ns, entry.line)
             })
             .collect();

@@ -2208,6 +2208,7 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tower",
+ "tower-http",
 ]
 
 [[package]]
@@ -3448,10 +3449,12 @@ dependencies = [
  "futures-util",
  "http 1.4.2",
  "http-body 1.0.1",
+ "http-body-util",
  "pin-project-lite",
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
  "url",
 ]
 

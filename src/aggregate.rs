@@ -20,7 +20,10 @@ pub async fn merged_sketch(
     start_ns: i64,
     end_ns: i64,
 ) -> anyhow::Result<Option<FieldSketch>> {
-    let span = end_ns - start_ns;
+    // Saturating: start_ns/end_ns ultimately come from a client-supplied query
+    // param or MCP tool call with no bounds validation — a plain `-` can overflow
+    // (panics in a debug build, silently wraps in release) for an extreme pair.
+    let span = end_ns.saturating_sub(start_ns);
     let ns: &[u8] = if span <= HOUR_NS {
         ROLLUP_MINUTE_NS
     } else if span <= DAY_NS {

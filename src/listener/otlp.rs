@@ -6,8 +6,10 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use axum::Router;
 use prost::Message;
+use tonic::service::Interceptor;
 use tonic::{Request, Response, Status};
 
+use crate::auth::AuthTokens;
 use crate::otlpproto::opentelemetry::proto::collector::logs::v1::logs_service_server::{
     LogsService, LogsServiceServer,
 };
@@ -75,12 +77,34 @@ impl LogsService for GrpcLogsService {
     }
 }
 
+/// Checks gRPC metadata's `authorization` entry against the same `AuthTokens`
+/// every HTTP surface uses (`AuthTokens::check_header`) — gRPC carries it as
+/// ordinary HTTP/2 header metadata, same value shape (`"Bearer <token>"`), just
+/// read through `tonic::Request::metadata()` instead of axum's `HeaderMap`.
+#[derive(Clone)]
+struct AuthInterceptor(AuthTokens);
+
+impl Interceptor for AuthInterceptor {
+    fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
+        let provided = request
+            .metadata()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok());
+        if self.0.check_header(provided) {
+            Ok(request)
+        } else {
+            Err(Status::unauthenticated("missing or invalid bearer token"))
+        }
+    }
+}
+
 pub async fn serve_grpc(
     addr: &str,
     storage: Arc<Storage>,
     allowed_fields: Arc<Vec<String>>,
     rollup: Option<RollupHandle>,
     textindex: Option<TextIndexHandle>,
+    auth_tokens: AuthTokens,
     stats: IngestStats,
 ) -> anyhow::Result<()> {
     let service = GrpcLogsService {
@@ -92,8 +116,9 @@ pub async fn serve_grpc(
             stats,
         },
     };
+    let service = LogsServiceServer::with_interceptor(service, AuthInterceptor(auth_tokens));
     tonic::transport::Server::builder()
-        .add_service(LogsServiceServer::new(service))
+        .add_service(service)
         .serve(addr.parse()?)
         .await?;
     Ok(())
@@ -111,9 +136,10 @@ pub fn router(
     allowed_fields: Arc<Vec<String>>,
     rollup: Option<RollupHandle>,
     textindex: Option<TextIndexHandle>,
+    auth_tokens: AuthTokens,
     stats: IngestStats,
 ) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/v1/logs", post(http_logs_handler))
         .with_state(Arc::new(Ingester {
             storage,
@@ -121,7 +147,8 @@ pub fn router(
             rollup,
             textindex,
             stats,
-        }))
+        }));
+    crate::auth::layer(router, auth_tokens)
 }
 
 pub async fn serve_http(
@@ -130,9 +157,17 @@ pub async fn serve_http(
     allowed_fields: Arc<Vec<String>>,
     rollup: Option<RollupHandle>,
     textindex: Option<TextIndexHandle>,
+    auth_tokens: AuthTokens,
     stats: IngestStats,
 ) -> anyhow::Result<()> {
-    let app = router(storage, allowed_fields, rollup, textindex, stats);
+    let app = router(
+        storage,
+        allowed_fields,
+        rollup,
+        textindex,
+        auth_tokens,
+        stats,
+    );
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())

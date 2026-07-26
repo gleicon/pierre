@@ -125,6 +125,7 @@ async fn main() -> anyhow::Result<()> {
         allowed_fields.clone(),
         rollup.clone(),
         Some(textindex.clone()),
+        auth_tokens.clone(),
         stats.clone(),
     );
     let otlp_http = listener::otlp::serve_http(
@@ -133,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
         allowed_fields.clone(),
         rollup.clone(),
         Some(textindex.clone()),
+        auth_tokens.clone(),
         stats.clone(),
     );
     let mcp = listener::mcp::serve(

@@ -232,6 +232,51 @@ async fn get_context_returns_surrounding_lines_from_same_stream() {
     client.cancel().await.unwrap();
 }
 
+/// Regression test for a real crash: `hex_decode`'s original implementation sliced
+/// the caller-supplied `doc_id` string at fixed byte offsets (`&s[i..i+2]`), which
+/// panics the moment the string contains a multi-byte UTF-8 character at an
+/// unaligned position — confirmed with a standalone repro before the fix (`"€a"`
+/// is 4 bytes, passes the even-length check, panics on `s[0..2]` with "byte index
+/// 2 is not a char boundary"). A malformed `doc_id` is invalid *params*, which
+/// rmcp surfaces as a clean JSON-RPC error (an `Err` from `call_tool`, per spec —
+/// distinct from a tool-execution error, which would be `CallToolResult{isError:
+/// true}`); either shape is fine here, what matters is that it's a clean `Result`
+/// and not a panicked/crashed connection.
+#[tokio::test]
+async fn get_context_with_multibyte_doc_id_returns_a_clean_error_not_a_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
+    let fields: Vec<String> = vec![];
+    let client = connect(storage, fields).await;
+
+    let mut args = serde_json::Map::new();
+    args.insert("doc_id".to_string(), json!("\u{20AC}a"));
+    args.insert("n".to_string(), json!(1));
+
+    let result = client
+        .peer()
+        .call_tool(CallToolRequestParams::new("get_context").with_arguments(args))
+        .await;
+    assert!(
+        result.is_err(),
+        "a malformed doc_id must be a clean invalid-params error: {result:?}"
+    );
+
+    // The connection itself must still be usable afterward — proves the server
+    // didn't panic its way out of a shared task.
+    let mut args = serde_json::Map::new();
+    args.insert("start_ns".to_string(), json!(0));
+    args.insert("end_ns".to_string(), json!(1));
+    let result = client
+        .peer()
+        .call_tool(CallToolRequestParams::new("search_logs").with_arguments(args))
+        .await
+        .unwrap();
+    assert_ne!(result.is_error, Some(true));
+
+    client.cancel().await.unwrap();
+}
+
 #[tokio::test]
 async fn list_streams_reports_exact_cardinality_when_no_rollup_configured() {
     let dir = tempfile::tempdir().unwrap();

@@ -116,10 +116,19 @@ pub async fn search(
         );
     }
 
+    // One failed bucket (a rare individual I/O or deserialization error, not the
+    // common case of an empty/never-populated bucket, which `search_text` already
+    // resolves as an empty result rather than an error) must not fail a whole
+    // wide-range search — same "log and keep going" resilience every background
+    // worker in this codebase already applies (`rollup::worker::merge_up`,
+    // `backup::archive_new_segments`, etc.), just applied to a read path too.
     let namespaces = bucket_namespaces_for_range(start_ns, end_ns, bucket_duration);
     let mut merged = Vec::new();
     for ns in namespaces {
-        merged.extend(storage.search_text(&ns, query, k).await?);
+        match storage.search_text(&ns, query, k).await {
+            Ok(hits) => merged.extend(hits),
+            Err(e) => log::warn!("BM25 search failed for bucket {ns:?}: {e}"),
+        }
     }
     merged.sort_by(|a, b| {
         b.score

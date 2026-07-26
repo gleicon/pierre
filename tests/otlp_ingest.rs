@@ -74,6 +74,7 @@ async fn grpc_export_lands_as_a_real_record() {
             Arc::new(vec![]),
             None,
             None,
+            pierre::auth::AuthTokens::new(vec![]),
             pierre::stats::IngestStats::default(),
         )
         .await;
@@ -120,6 +121,7 @@ async fn http_protobuf_export_lands_as_a_real_record() {
             Arc::new(vec![]),
             None,
             None,
+            pierre::auth::AuthTokens::new(vec![]),
             pierre::stats::IngestStats::default(),
         )
         .await;
@@ -158,6 +160,7 @@ async fn json_content_type_is_rejected_not_silently_misparsed() {
             Arc::new(vec![]),
             None,
             None,
+            pierre::auth::AuthTokens::new(vec![]),
             pierre::stats::IngestStats::default(),
         )
         .await;
@@ -168,6 +171,101 @@ async fn json_content_type_is_rejected_not_silently_misparsed() {
     assert_eq!(status, 415);
 }
 
+/// Both OTLP transports used to silently ignore `pierre.toml`'s `auth_tokens`
+/// entirely — every other HTTP/gRPC surface (native excepted, deliberately) wired
+/// it in, OTLP never did. An operator who configured a token expecting it to
+/// lock down *every* surface would have had this one wide open regardless.
+#[tokio::test]
+async fn http_export_is_gated_by_auth_tokens_when_configured() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
+
+    let listener_socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener_socket.local_addr().unwrap().to_string();
+    drop(listener_socket);
+
+    let addr_for_server = addr.clone();
+    tokio::spawn(async move {
+        let _ = pierre::listener::otlp::serve_http(
+            &addr_for_server,
+            storage,
+            Arc::new(vec![]),
+            None,
+            None,
+            pierre::auth::AuthTokens::new(vec!["secret".to_string()]),
+            pierre::stats::IngestStats::default(),
+        )
+        .await;
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let body = sample_request("should be rejected").encode_to_vec();
+    let status = post_with_content_type_and_auth(&addr, body, "application/x-protobuf", None).await;
+    assert_eq!(status, 401, "a missing bearer token must be rejected");
+
+    let body = sample_request("should be accepted").encode_to_vec();
+    let status = post_with_content_type_and_auth(
+        &addr,
+        body,
+        "application/x-protobuf",
+        Some("Bearer secret"),
+    )
+    .await;
+    assert_eq!(status, 200, "a valid bearer token must be accepted");
+}
+
+/// Same gap, gRPC transport: a client with no `authorization` metadata (or the
+/// wrong token) must get a real `UNAUTHENTICATED` status, not a silent accept.
+#[tokio::test]
+async fn grpc_export_is_gated_by_auth_tokens_when_configured() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = Arc::new(Storage::open(dir.path()).await.unwrap());
+
+    let listener_socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener_socket.local_addr().unwrap().to_string();
+    drop(listener_socket);
+
+    let addr_for_server = addr.clone();
+    let storage_for_server = storage.clone();
+    tokio::spawn(async move {
+        let _ = pierre::listener::otlp::serve_grpc(
+            &addr_for_server,
+            storage_for_server,
+            Arc::new(vec![]),
+            None,
+            None,
+            pierre::auth::AuthTokens::new(vec!["secret".to_string()]),
+            pierre::stats::IngestStats::default(),
+        )
+        .await;
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let mut client = LogsServiceClient::connect(format!("http://{addr}"))
+        .await
+        .unwrap();
+
+    let unauthenticated = client.export(sample_request("no token")).await;
+    assert_eq!(
+        unauthenticated.unwrap_err().code(),
+        tonic::Code::Unauthenticated,
+        "a request with no bearer token must be rejected"
+    );
+
+    let mut authed = tonic::Request::new(sample_request("with token"));
+    authed
+        .metadata_mut()
+        .insert("authorization", "Bearer secret".parse().unwrap());
+    let response = client.export(authed).await.unwrap();
+    assert!(response.into_inner().partial_success.is_none());
+
+    let results = query::select(&storage, 0, i64::MAX, &BTreeMap::new())
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1, "only the authenticated export must land");
+    assert_eq!(results[0].message, "with token");
+}
+
 /// Minimal raw HTTP client over TCP — avoids adding a dev-dependency (reqwest)
 /// just for two integration tests when a plain socket write does the job.
 async fn reqwest_like_post(addr: &str, body: Vec<u8>) -> u16 {
@@ -175,10 +273,22 @@ async fn reqwest_like_post(addr: &str, body: Vec<u8>) -> u16 {
 }
 
 async fn post_with_content_type(addr: &str, body: Vec<u8>, content_type: &str) -> u16 {
+    post_with_content_type_and_auth(addr, body, content_type, None).await
+}
+
+async fn post_with_content_type_and_auth(
+    addr: &str,
+    body: Vec<u8>,
+    content_type: &str,
+    authorization: Option<&str>,
+) -> u16 {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let auth_header = authorization
+        .map(|v| format!("Authorization: {v}\r\n"))
+        .unwrap_or_default();
     let request = format!(
-        "POST /v1/logs HTTP/1.1\r\nHost: localhost\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "POST /v1/logs HTTP/1.1\r\nHost: localhost\r\nContent-Type: {content_type}\r\n{auth_header}Content-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
     stream.write_all(request.as_bytes()).await.unwrap();

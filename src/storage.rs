@@ -278,9 +278,21 @@ impl Storage {
 /// `suffix` is either fresh per-record randomness (real record keys, see `commit()`)
 /// or a literal `0` (range-query boundary construction, see `range()` — the minimum
 /// possible key at that timestamp, not a real record's key).
+///
+/// The timestamp is bias-flipped (sign bit inverted) rather than cast to `u64`
+/// directly: a plain `as u64` cast preserves ordering only within same-sign values —
+/// a negative `timestamp_ns` wraps into the *upper* half of the u64 range, sorting
+/// after every non-negative timestamp instead of before it. That inverted a caller's
+/// `start_key < end_key` assumption whenever `start_ns` went negative (`/query/logs`
+/// takes `start`/`end` straight from a client-supplied query param, no lower bound —
+/// a negative `start` silently returned wrong results instead of an error). Flipping
+/// the sign bit keeps every `i64`, negative or not, in the same relative order as an
+/// unsigned big-endian byte comparison — the standard order-preserving encoding for
+/// a signed integer.
 fn encode_key(timestamp_ns: i64, suffix: u64) -> Vec<u8> {
     let mut key = Vec::with_capacity(16);
-    key.extend_from_slice(&(timestamp_ns as u64).to_be_bytes());
+    let biased = (timestamp_ns as u64) ^ (1u64 << 63);
+    key.extend_from_slice(&biased.to_be_bytes());
     key.extend_from_slice(&suffix.to_be_bytes());
     key
 }
@@ -301,6 +313,22 @@ mod tests {
         let a = encode_key(100, 0);
         let b = encode_key(100, 1);
         assert!(a < b);
+    }
+
+    #[test]
+    fn key_order_holds_across_negative_and_positive_timestamps() {
+        // A plain `timestamp_ns as u64` cast (the pre-fix encoding) wraps negative
+        // values into the *upper* half of u64, sorting them after every positive
+        // timestamp — inverted. The bias-flip must keep every case in real order.
+        let min = encode_key(i64::MIN, 0);
+        let negative = encode_key(-1_000_000_000, 0);
+        let zero = encode_key(0, 0);
+        let positive = encode_key(1_000_000_000, 0);
+        let max = encode_key(i64::MAX, 0);
+        assert!(min < negative);
+        assert!(negative < zero);
+        assert!(zero < positive);
+        assert!(positive < max);
     }
 
     #[test]

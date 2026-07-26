@@ -43,18 +43,32 @@ fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Decodes on raw bytes (`s.as_bytes()`), never `str` byte-range slicing: `doc_id`
+/// is caller-controlled MCP tool-call input, and slicing a `&str` at a fixed byte
+/// stride panics ("byte index N is not a char boundary") the moment the string
+/// contains any multi-byte UTF-8 character at an odd position — e.g. `"€a"` is 4
+/// bytes (passes the even-length check) but panics on `s[0..2]`, confirmed via a
+/// standalone repro before this fix. Casting a `u8` to `char` is always valid (the
+/// first 256 Unicode scalar values), so working on raw bytes throughout sidesteps
+/// UTF-8 boundaries entirely — a byte that's part of a multi-byte sequence just
+/// fails `to_digit(16)` like any other non-hex-digit input, no panic possible.
 fn hex_decode(s: &str) -> Result<Vec<u8>, McpError> {
-    if !s.len().is_multiple_of(2) {
+    let bytes = s.as_bytes();
+    if !bytes.len().is_multiple_of(2) {
         return Err(McpError::invalid_params(
             "doc_id must be an even-length hex string",
             None,
         ));
     }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| {
-            u8::from_str_radix(&s[i..i + 2], 16)
-                .map_err(|_| McpError::invalid_params("doc_id is not valid hex", None))
+    bytes
+        .chunks(2)
+        .map(|pair| {
+            let hi = (pair[0] as char).to_digit(16);
+            let lo = (pair[1] as char).to_digit(16);
+            match (hi, lo) {
+                (Some(hi), Some(lo)) => Ok(((hi as u8) << 4) | lo as u8),
+                _ => Err(McpError::invalid_params("doc_id is not valid hex", None)),
+            }
         })
         .collect()
 }
@@ -339,15 +353,20 @@ impl PierreMcpServer {
 
         // A generous fixed window rather than an adaptive one — keeps this tool's
         // cost bounded and predictable; a stream with fewer than n lines within ~10
-        // minutes either side just returns what's there. Clamped at 0: storage
-        // keys encode the timestamp as `as u64`, so a negative window start would
-        // wrap to a huge value and invert the range comparison in `range_with_keys`.
+        // minutes either side just returns what's there. Clamped at 0: a real record
+        // is never timestamped before the epoch, so there's nothing to gain from
+        // scanning negative time — not a correctness requirement (`encode_key`
+        // handles negative timestamps correctly), just a pointless-scan guard.
+        // Saturating: `anchor.timestamp_ns` is whatever the original ingest surface
+        // was handed (every ingest surface accepts a client-supplied timestamp_ns
+        // with no bounds check), so a record deliberately or accidentally stored
+        // near i64::MIN/MAX must not overflow this arithmetic.
         const WINDOW_NS: i64 = 10 * 60 * 1_000_000_000;
         let window = self
             .storage
             .range_with_keys(
-                (anchor.timestamp_ns - WINDOW_NS).max(0),
-                anchor.timestamp_ns + WINDOW_NS,
+                anchor.timestamp_ns.saturating_sub(WINDOW_NS).max(0),
+                anchor.timestamp_ns.saturating_add(WINDOW_NS),
             )
             .await
             .map_err(internal_err)?;
@@ -478,8 +497,13 @@ impl PierreMcpServer {
         &self,
         Parameters(params): Parameters<FindAnomaliesParams>,
     ) -> Result<CallToolResult, McpError> {
-        let span = params.end_ns - params.start_ns;
-        let baseline_start = params.baseline_start_ns.unwrap_or(params.start_ns - span);
+        // Saturating: start_ns/end_ns are caller-supplied tool arguments with no
+        // bounds validation — a plain `-` can overflow (panics in a debug build,
+        // silently wraps in release) for an extreme pair.
+        let span = params.end_ns.saturating_sub(params.start_ns);
+        let baseline_start = params
+            .baseline_start_ns
+            .unwrap_or(params.start_ns.saturating_sub(span));
         let baseline_end = params.baseline_end_ns.unwrap_or(params.start_ns);
 
         let current = self
