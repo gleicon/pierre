@@ -127,6 +127,30 @@ impl Storage {
         Ok(out)
     }
 
+    /// Same as `range()`, but keeps each record's own storage key alongside it — the
+    /// MCP server's `search_logs`/`get_context` tools (`src/mcp.rs`) need a durable
+    /// `doc_id` to hand back to the caller and later resolve again, which plain
+    /// `range()`/`query::select()` never needed (their callers only ever wanted the
+    /// record content). A separate narrow method rather than widening `range()`'s
+    /// existing return shape, which `/query/logs` and other callers already depend on.
+    pub async fn range_with_keys(
+        &self,
+        start_ns: i64,
+        end_ns: i64,
+    ) -> anyhow::Result<Vec<(Vec<u8>, Record)>> {
+        let all = self.engine.prefix(LOGS_NS, &[]).await?;
+        let start_key = encode_key(start_ns, 0);
+        let end_key = encode_key(end_ns, 0);
+        let mut out = Vec::new();
+        for (key, value) in all {
+            if key >= start_key && key < end_key {
+                out.push((key.clone(), serde_json::from_slice::<Record>(&value)?));
+            }
+        }
+        out.sort_by_key(|(_, r)| r.timestamp_ns);
+        Ok(out)
+    }
+
     /// Fetches a single log record by its exact storage key — used to resolve a BM25
     /// search hit's `doc_id` (which is this same key) back to the full record.
     pub async fn get_record(&self, key: &[u8]) -> anyhow::Result<Option<Record>> {

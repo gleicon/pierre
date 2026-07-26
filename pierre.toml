@@ -17,6 +17,10 @@ otlp_grpc_listen_addr = "127.0.0.1:4327"
 # is a deliberate scope cut, see src/listener/otlp.rs. Default matches the real
 # OTLP/HTTP conventional port (4318).
 otlp_http_listen_addr = "127.0.0.1:4318"
+# MCP (Model Context Protocol) server, Streamable HTTP transport, mounted at /mcp —
+# read-only agent-facing tools (search_logs, get_context, list_streams, aggregate,
+# find_anomalies). Shares the same bearer-token auth as the rest of the query surface.
+mcp_listen_addr = "127.0.0.1:8000"
 fields = ["level", "status", "trace_id", "latency_ms", "path"]
 rollup_minute_ttl_secs = 3600
 hot_to_warm_flush_interval_secs = 300

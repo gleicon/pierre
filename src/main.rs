@@ -130,10 +130,17 @@ async fn main() -> anyhow::Result<()> {
     let otlp_http = listener::otlp::serve_http(
         &config.otlp_http_listen_addr,
         storage.clone(),
-        allowed_fields,
+        allowed_fields.clone(),
         rollup.clone(),
         Some(textindex.clone()),
         stats.clone(),
+    );
+    let mcp = listener::mcp::serve(
+        &config.mcp_listen_addr,
+        storage.clone(),
+        allowed_fields,
+        textindex_bucket_duration,
+        auth_tokens.clone(),
     );
     let query_api = listener::query_api::serve(
         &config.query_listen_addr,
@@ -144,6 +151,6 @@ async fn main() -> anyhow::Result<()> {
         rollup,
         Some(textindex),
     );
-    tokio::try_join!(native, loki, es_bulk, syslog, otlp_grpc, otlp_http, query_api)?;
+    tokio::try_join!(native, loki, es_bulk, syslog, otlp_grpc, otlp_http, mcp, query_api)?;
     Ok(())
 }

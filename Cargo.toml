@@ -39,6 +39,8 @@ rand = "0.8"
 jiff = { version = "0.2", default-features = false, features = ["std"] }
 tonic = "0.14"
 tonic-prost = "0.14"
+rmcp = { version = "2.2.0", features = ["transport-streamable-http-server"] }
+schemars = "1"
 
 [build-dependencies]
 prost-build = "0.14"
@@ -55,6 +57,7 @@ required-features = ["s3"]
 [dev-dependencies]
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
+rmcp = { version = "2.2.0", features = ["client", "transport-streamable-http-client-reqwest"] }
 
 # The profile that 'dist' will build with
 [profile.dist]

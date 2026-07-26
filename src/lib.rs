@@ -6,6 +6,7 @@ pub mod ingest;
 pub mod listener;
 pub mod logql;
 pub mod lokiproto;
+pub mod mcp;
 pub mod otlpproto;
 pub mod query;
 pub mod record;

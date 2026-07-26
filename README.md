@@ -49,16 +49,23 @@ cp pierre.toml my-pierre.toml   # edit data_dir / listen addrs / fields as neede
 The config file path is the only CLI argument; it defaults to `pierre.toml` in the current
 directory if omitted. See the comments in [`pierre.toml`](pierre.toml) for every field.
 
-Once running, three HTTP/TCP surfaces come up on the addresses configured in `pierre.toml`:
+Once running, several HTTP/TCP surfaces come up on the addresses configured in `pierre.toml`:
 
 - `native_listen_addr` — the native ingest protocol (unauthenticated by design, see
   [`DECISIONS.md`](DECISIONS.md)).
 - `loki_listen_addr` — `/loki/api/v1/push` (ingest) and `/loki/api/v1/query_range` (query).
 - `query_listen_addr` — `/query/logs`, `/query/search`, `/query/aggregate`.
+- `es_bulk_listen_addr` — Elasticsearch `_bulk`-compatible ingest, for shippers that already
+  speak that wire format (Filebeat, Logstash, Fluent Bit, Vector's ES sink).
+- `syslog_listen_addr` — RFC5424 syslog ingest, UDP and TCP.
+- `otlp_grpc_listen_addr` / `otlp_http_listen_addr` — OTLP logs ingest (gRPC and HTTP/protobuf).
+- `mcp_listen_addr` — MCP (Model Context Protocol) server, Streamable HTTP transport, mounted
+  at `/mcp`. Read-only agent-facing tools: `search_logs`, `get_context`, `list_streams`,
+  `aggregate`, `find_anomalies`.
 
-The Loki and native-query surfaces share one bearer-token auth middleware, off by default
-(`auth_tokens = []`). Turn it on before exposing Pierre beyond a fully trusted network — see
-[`RUNBOOK.md`](RUNBOOK.md) for a concrete walkthrough.
+The Loki, native-query, ES bulk, and MCP surfaces share one bearer-token auth middleware, off
+by default (`auth_tokens = []`). Turn it on before exposing Pierre beyond a fully trusted
+network — see [`RUNBOOK.md`](RUNBOOK.md) for a concrete walkthrough.
 
 ## Deploying somewhere real
 

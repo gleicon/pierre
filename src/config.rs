@@ -38,6 +38,11 @@ pub struct PierreConfig {
     /// `listener/otlp.rs` for why OTLP/JSON is a deliberate scope cut). Default
     /// matches the real OTLP/HTTP conventional port (4318), unclaimed elsewhere.
     pub otlp_http_listen_addr: String,
+    /// MCP (Model Context Protocol) server, Streamable HTTP transport, mounted at
+    /// `/mcp` (PRD v0.2 Block A-1) — read-only agent-facing tools (search_logs,
+    /// get_context, list_streams, aggregate, find_anomalies). Shares the same
+    /// bearer-token auth as the rest of the query surface.
+    pub mcp_listen_addr: String,
     pub fields: Vec<String>,
     /// Declarative rollup definitions (FR-22) — add a field/kind pair, no code change.
     pub rollup: Vec<RollupDef>,
@@ -104,6 +109,7 @@ impl Default for PierreConfig {
             syslog_listen_addr: "127.0.0.1:5514".to_string(),
             otlp_grpc_listen_addr: "127.0.0.1:4327".to_string(),
             otlp_http_listen_addr: "127.0.0.1:4318".to_string(),
+            mcp_listen_addr: "127.0.0.1:8000".to_string(),
             rollup: vec![
                 RollupDef {
                     field: "level".to_string(),
