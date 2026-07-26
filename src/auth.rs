@@ -16,6 +16,7 @@ use axum::http::{header, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::Router;
+use subtle::ConstantTimeEq;
 
 #[derive(Clone)]
 pub struct AuthTokens(Arc<HashSet<String>>);
@@ -29,8 +30,24 @@ impl AuthTokens {
         !self.0.is_empty()
     }
 
+    /// Constant-time against every configured token — `HashSet::contains`'s
+    /// hash-then-lookup already dampens the classic "byte comparison bails on
+    /// the first mismatch" timing signal, but doesn't eliminate it, so this
+    /// closes it properly: compares against *every* entry, never short-
+    /// circuits on a match, and each individual comparison runs in time
+    /// independent of where the bytes first differ. `[u8]::ct_eq` (`subtle`,
+    /// already resolved in the dependency tree via the RustCrypto chain
+    /// several other dependencies pull in — zero net new compiled crate)
+    /// short-circuits only on a length mismatch, which is fine: token
+    /// *length* isn't the secret here, only its content is.
     fn is_valid(&self, token: &str) -> bool {
-        self.0.contains(token)
+        let token = token.as_bytes();
+        self.0
+            .iter()
+            .fold(subtle::Choice::from(0u8), |acc, candidate| {
+                acc | candidate.as_bytes().ct_eq(token)
+            })
+            .into()
     }
 
     /// Checks a raw `Authorization` header value (e.g. `"Bearer <token>"`) against
@@ -124,5 +141,40 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    /// Correctness for the constant-time rewrite of `is_valid`/`check_header` —
+    /// timing itself isn't asserted here (notoriously flaky in CI), but every
+    /// functional case the old `HashSet::contains` handled must still work
+    /// identically: empty config means auth off, the right token among several
+    /// configured ones passes, a wrong or empty-string token fails, and a
+    /// missing/malformed `Authorization` header fails.
+    #[test]
+    fn constant_time_check_matches_hashset_contains_semantics() {
+        let disabled = AuthTokens::new(vec![]);
+        assert!(disabled.check_header(None));
+        assert!(disabled.check_header(Some("Bearer anything")));
+
+        let tokens = AuthTokens::new(vec!["alpha".to_string(), "beta".to_string()]);
+        assert!(tokens.check_header(Some("Bearer alpha")));
+        assert!(tokens.check_header(Some("Bearer beta")));
+        assert!(!tokens.check_header(Some("Bearer gamma")));
+        assert!(
+            !tokens.check_header(Some("Bearer alph")),
+            "must not prefix-match"
+        );
+        assert!(
+            !tokens.check_header(Some("Bearer alphaX")),
+            "must not prefix-match the other way"
+        );
+        assert!(
+            !tokens.check_header(Some("Bearer ")),
+            "empty token must not match"
+        );
+        assert!(
+            !tokens.check_header(Some("alpha")),
+            "missing Bearer prefix must not match"
+        );
+        assert!(!tokens.check_header(None));
     }
 }

@@ -43,6 +43,7 @@ rmcp = { version = "2.2.0", features = ["transport-streamable-http-server"] }
 schemars = "1"
 tower-http = { version = "0.6", features = ["catch-panic"] }
 hex = "0.4"
+subtle = "2"
 
 [build-dependencies]
 prost-build = "0.14"
