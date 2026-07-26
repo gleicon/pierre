@@ -178,7 +178,7 @@ async fn handle_line(
 /// text, not dropped — rather than rejecting input a real syslog receiver would
 /// have accepted.
 fn parse_rfc5424(line: &str) -> WireRecord {
-    let now_ns = jiff::Timestamp::now().as_nanosecond() as i64;
+    let now_ns = crate::clock::now_ns();
 
     let Some(header) = try_parse_header(line) else {
         return WireRecord {
@@ -381,9 +381,9 @@ mod tests {
 
     #[test]
     fn nil_timestamp_falls_back_to_now() {
-        let before = jiff::Timestamp::now().as_nanosecond() as i64;
+        let before = crate::clock::now_ns();
         let wire = parse_rfc5424("<13>1 - myhost.local myapp - - - hello");
-        let after = jiff::Timestamp::now().as_nanosecond() as i64;
+        let after = crate::clock::now_ns();
         assert!(
             wire.timestamp_ns >= before && wire.timestamp_ns <= after,
             "nil timestamp (-) must fall back to current time"

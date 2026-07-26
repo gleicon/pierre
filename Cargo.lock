@@ -2188,6 +2188,7 @@ dependencies = [
  "edgestore-tier",
  "edgestore-tokio",
  "env_logger",
+ "hex",
  "hyperloglogplus",
  "jiff",
  "log",

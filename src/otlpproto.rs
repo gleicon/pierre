@@ -96,13 +96,21 @@ pub fn decode_export_request(request: &ExportLogsServiceRequest) -> Vec<WireReco
                 // can't supply its own clock reading) — prefer the real event time,
                 // falling back to observed time, and only to wall-clock now if OTLP
                 // sent neither, which is technically permitted by the spec.
-                let timestamp_ns = if log_record.time_unix_nano != 0 {
-                    log_record.time_unix_nano as i64
-                } else if log_record.observed_time_unix_nano != 0 {
-                    log_record.observed_time_unix_nano as i64
-                } else {
-                    jiff::Timestamp::now().as_nanosecond() as i64
-                };
+                //
+                // Both are wire `u64`; `try_from` rather than `as i64` so a value past
+                // `i64::MAX` (never sent by a real OTel exporter — realistic epoch-ns
+                // magnitudes are nowhere close — but the field is otherwise
+                // unvalidated wire input) maps to `None` and falls through to the next
+                // fallback in the chain, the same way a genuinely-absent (zero) field
+                // already does, instead of silently reinterpreting as a negative
+                // timestamp.
+                let time_unix_nano = i64::try_from(log_record.time_unix_nano).ok();
+                let observed_time_unix_nano =
+                    i64::try_from(log_record.observed_time_unix_nano).ok();
+                let timestamp_ns = time_unix_nano
+                    .filter(|&t| t != 0)
+                    .or_else(|| observed_time_unix_nano.filter(|&t| t != 0))
+                    .unwrap_or_else(crate::clock::now_ns);
 
                 records.push(WireRecord {
                     timestamp_ns,
@@ -144,22 +152,6 @@ fn any_value_to_string(value: &AnyValue) -> String {
         // says non-Profiling receivers should treat its presence as equivalent to
         // an absent value, which is exactly what the `None` arm already does.
         Some(Value::StringValueStrindex(_)) | None => String::new(),
-    }
-}
-
-/// Minimal hex encoding for `trace_id`/`span_id`/bytes values — the standard OTel
-/// convention for displaying these (e.g. Jaeger/Grafana Tempo trace IDs are always
-/// shown as hex), not a general-purpose encoding need elsewhere in Pierre. A tiny
-/// hand-rolled loop rather than a crate, matching this codebase's established
-/// preference for small hand-rolled things over a dependency for a few lines
-/// (see Space-Saving, the Prometheus text formatting in `query_api.rs`).
-mod hex {
-    pub fn encode(bytes: &[u8]) -> String {
-        let mut out = String::with_capacity(bytes.len() * 2);
-        for b in bytes {
-            out.push_str(&format!("{b:02x}"));
-        }
-        out
     }
 }
 
@@ -275,6 +267,82 @@ mod tests {
         assert!(
             !records[0].fields.contains_key("severity_number"),
             "severity_number of 0 (unspecified) must not become a field"
+        );
+    }
+
+    /// `time_unix_nano`/`observed_time_unix_nano` are wire `u64`, unvalidated —
+    /// a value past `i64::MAX` must fall through to the next fallback in the
+    /// chain (same as a genuinely-absent zero field), not silently reinterpret
+    /// as a negative timestamp via a plain `as i64` cast.
+    #[test]
+    fn out_of_i64_range_time_unix_nano_falls_through_to_observed_time() {
+        let request = ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                resource: None,
+                scope_logs: vec![ScopeLogs {
+                    scope: None,
+                    log_records: vec![LogRecord {
+                        time_unix_nano: u64::MAX,
+                        observed_time_unix_nano: 1_650_000_000_000_000_000,
+                        severity_number: 0,
+                        severity_text: String::new(),
+                        body: Some(AnyValue {
+                            value: Some(Value::StringValue("out of range".to_string())),
+                        }),
+                        attributes: vec![],
+                        dropped_attributes_count: 0,
+                        flags: 0,
+                        trace_id: vec![],
+                        span_id: vec![],
+                        event_name: String::new(),
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        };
+
+        let records = decode_export_request(&request);
+        assert_eq!(records[0].timestamp_ns, 1_650_000_000_000_000_000);
+    }
+
+    /// If *both* fields are out of range, it must fall all the way through to
+    /// wall-clock now rather than landing a negative timestamp.
+    #[test]
+    fn out_of_i64_range_on_both_timestamp_fields_falls_through_to_now() {
+        let request = ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                resource: None,
+                scope_logs: vec![ScopeLogs {
+                    scope: None,
+                    log_records: vec![LogRecord {
+                        time_unix_nano: u64::MAX,
+                        observed_time_unix_nano: u64::MAX,
+                        severity_number: 0,
+                        severity_text: String::new(),
+                        body: Some(AnyValue {
+                            value: Some(Value::StringValue("both out of range".to_string())),
+                        }),
+                        attributes: vec![],
+                        dropped_attributes_count: 0,
+                        flags: 0,
+                        trace_id: vec![],
+                        span_id: vec![],
+                        event_name: String::new(),
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        };
+
+        let before = crate::clock::now_ns();
+        let records = decode_export_request(&request);
+        let after = crate::clock::now_ns();
+        assert!(
+            records[0].timestamp_ns >= before && records[0].timestamp_ns <= after,
+            "must fall back to wall-clock now, got {}",
+            records[0].timestamp_ns
         );
     }
 }

@@ -184,7 +184,7 @@ fn wire_record_from_doc(doc: &Map<String, Value>) -> WireRecord {
         .and_then(Value::as_str)
         .and_then(|s| s.parse::<jiff::Timestamp>().ok())
         .map(|t| t.as_nanosecond() as i64)
-        .unwrap_or_else(|| jiff::Timestamp::now().as_nanosecond() as i64);
+        .unwrap_or_else(crate::clock::now_ns);
 
     let mut fields = std::collections::BTreeMap::new();
     for (key, value) in doc {

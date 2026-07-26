@@ -1,8 +1,10 @@
 pub mod aggregate;
 pub mod auth;
 pub mod backup;
+pub mod clock;
 pub mod config;
 pub mod ingest;
+pub mod keycodec;
 pub mod listener;
 pub mod logql;
 pub mod lokiproto;

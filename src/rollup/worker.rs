@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 
@@ -54,7 +54,7 @@ pub async fn run(
     tiers: TierConfig,
 ) {
     let mut bucket: Bucket = HashMap::new();
-    let now = now_ns();
+    let now = crate::clock::now_ns();
     let mut minute_window_start = now;
     let mut hour_window_start = now;
     let mut day_window_start = now;
@@ -90,24 +90,24 @@ pub async fn run(
                     }
                 }
                 bucket = HashMap::new();
-                minute_window_start = now_ns();
+                minute_window_start = crate::clock::now_ns();
             }
             _ = hour_tick.tick() => {
-                let end = now_ns();
+                let end = crate::clock::now_ns();
                 if let Err(e) = merge_up(&storage, ROLLUP_MINUTE_NS, ROLLUP_HOUR_NS, hour_window_start, end, tiers.hour_ttl_secs).await {
                     log::warn!("failed to merge minute rollups into hour tier: {e}");
                 }
                 hour_window_start = end;
             }
             _ = day_tick.tick() => {
-                let end = now_ns();
+                let end = crate::clock::now_ns();
                 if let Err(e) = merge_up(&storage, ROLLUP_HOUR_NS, ROLLUP_DAY_NS, day_window_start, end, tiers.day_ttl_secs).await {
                     log::warn!("failed to merge hour rollups into day tier: {e}");
                 }
                 day_window_start = end;
             }
             _ = month_tick.tick() => {
-                let end = now_ns();
+                let end = crate::clock::now_ns();
                 if let Err(e) = merge_up(&storage, ROLLUP_DAY_NS, ROLLUP_MONTH_NS, month_window_start, end, tiers.month_ttl_secs).await {
                     log::warn!("failed to merge day rollups into month tier: {e}");
                 }
@@ -170,9 +170,16 @@ pub async fn merge_up(
     Ok(())
 }
 
-/// `bucket_start_ns (8 bytes BE) || field name` — sortable by time, scoped by field.
+/// `bucket_start_ns (8 bytes BE, order-preserving — see `crate::keycodec`) ||
+/// field name` — sortable by time, scoped by field. `bucket_start_ns` only
+/// ever comes from `crate::clock::now_ns()`, always positive in practice, but
+/// going through the same encoding `Storage`'s own keys use means there's one
+/// implementation of "signed timestamp, sortable as bytes" instead of two that
+/// could silently drift apart.
 pub fn rollup_key(bucket_start_ns: i64, field: &str) -> Vec<u8> {
-    let mut key = (bucket_start_ns as u64).to_be_bytes().to_vec();
+    let mut key = crate::keycodec::order_preserving_ns(bucket_start_ns)
+        .to_be_bytes()
+        .to_vec();
     key.extend_from_slice(field.as_bytes());
     key
 }
@@ -181,14 +188,8 @@ pub fn decode_rollup_key(key: &[u8]) -> Option<(i64, String)> {
     if key.len() < 8 {
         return None;
     }
-    let bucket_start_ns = u64::from_be_bytes(key[0..8].try_into().ok()?) as i64;
+    let bucket_start_ns =
+        crate::keycodec::decode_order_preserving_ns(u64::from_be_bytes(key[0..8].try_into().ok()?));
     let field = String::from_utf8(key[8..].to_vec()).ok()?;
     Some((bucket_start_ns, field))
-}
-
-fn now_ns() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as i64
 }

@@ -279,20 +279,14 @@ impl Storage {
 /// or a literal `0` (range-query boundary construction, see `range()` — the minimum
 /// possible key at that timestamp, not a real record's key).
 ///
-/// The timestamp is bias-flipped (sign bit inverted) rather than cast to `u64`
-/// directly: a plain `as u64` cast preserves ordering only within same-sign values —
-/// a negative `timestamp_ns` wraps into the *upper* half of the u64 range, sorting
-/// after every non-negative timestamp instead of before it. That inverted a caller's
-/// `start_key < end_key` assumption whenever `start_ns` went negative (`/query/logs`
-/// takes `start`/`end` straight from a client-supplied query param, no lower bound —
-/// a negative `start` silently returned wrong results instead of an error). Flipping
-/// the sign bit keeps every `i64`, negative or not, in the same relative order as an
-/// unsigned big-endian byte comparison — the standard order-preserving encoding for
-/// a signed integer.
+/// See `crate::keycodec` for why the timestamp goes through
+/// `order_preserving_ns` rather than a plain `as u64` cast — `/query/logs`
+/// takes `start`/`end` straight from a client-supplied query param, no lower
+/// bound, and a negative `start` used to silently return wrong results
+/// instead of an error.
 fn encode_key(timestamp_ns: i64, suffix: u64) -> Vec<u8> {
     let mut key = Vec::with_capacity(16);
-    let biased = (timestamp_ns as u64) ^ (1u64 << 63);
-    key.extend_from_slice(&biased.to_be_bytes());
+    key.extend_from_slice(&crate::keycodec::order_preserving_ns(timestamp_ns).to_be_bytes());
     key.extend_from_slice(&suffix.to_be_bytes());
     key
 }

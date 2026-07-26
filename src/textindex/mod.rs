@@ -99,6 +99,14 @@ pub fn spawn(
 /// used reasonably narrow ranges).
 const MAX_BUCKETS_PER_SEARCH: usize = 200;
 
+/// `bucket_duration` as nanoseconds, `i64`, floored at 1 — `Duration::as_nanos`
+/// returns `u128` and a zero duration would divide-by-zero below, so every
+/// caller needs this same conversion; pulled out once instead of repeating it
+/// at each of the three call sites.
+fn bucket_ns(bucket_duration: Duration) -> i64 {
+    bucket_duration.as_nanos().max(1) as i64
+}
+
 pub async fn search(
     storage: &Storage,
     start_ns: i64,
@@ -107,7 +115,7 @@ pub async fn search(
     query: &str,
     k: usize,
 ) -> anyhow::Result<Vec<TextSearchResult>> {
-    let bucket_ns = bucket_duration.as_nanos().max(1) as i64;
+    let bucket_ns = bucket_ns(bucket_duration);
     let bucket_count = (end_ns.saturating_sub(start_ns) / bucket_ns).saturating_add(1);
     if bucket_count > MAX_BUCKETS_PER_SEARCH as i64 {
         anyhow::bail!(
@@ -141,7 +149,7 @@ pub async fn search(
 
 /// The bucket namespace a given timestamp falls into — one BM25 index per window.
 fn bucket_namespace(timestamp_ns: i64, bucket_duration: Duration) -> Vec<u8> {
-    let bucket_ns = bucket_duration.as_nanos().max(1) as i64;
+    let bucket_ns = bucket_ns(bucket_duration);
     let bucket_start = (timestamp_ns.div_euclid(bucket_ns)) * bucket_ns;
     format!("text_bucket_{bucket_start}").into_bytes()
 }
@@ -152,7 +160,7 @@ fn bucket_namespaces_for_range(
     end_ns: i64,
     bucket_duration: Duration,
 ) -> Vec<Vec<u8>> {
-    let bucket_ns = bucket_duration.as_nanos().max(1) as i64;
+    let bucket_ns = bucket_ns(bucket_duration);
     let first_bucket = start_ns.div_euclid(bucket_ns) * bucket_ns;
     let mut out = Vec::new();
     let mut bucket_start = first_bucket;

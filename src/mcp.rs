@@ -39,38 +39,18 @@ fn default_context_lines() -> usize {
     DEFAULT_CONTEXT_LINES
 }
 
-fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Decodes on raw bytes (`s.as_bytes()`), never `str` byte-range slicing: `doc_id`
-/// is caller-controlled MCP tool-call input, and slicing a `&str` at a fixed byte
-/// stride panics ("byte index N is not a char boundary") the moment the string
-/// contains any multi-byte UTF-8 character at an odd position — e.g. `"€a"` is 4
-/// bytes (passes the even-length check) but panics on `s[0..2]`, confirmed via a
-/// standalone repro before this fix. Casting a `u8` to `char` is always valid (the
-/// first 256 Unicode scalar values), so working on raw bytes throughout sidesteps
-/// UTF-8 boundaries entirely — a byte that's part of a multi-byte sequence just
-/// fails `to_digit(16)` like any other non-hex-digit input, no panic possible.
+/// `doc_id` is caller-controlled MCP tool-call input — this used to be a
+/// hand-rolled decoder that sliced the `&str` at fixed byte offsets, which
+/// panicked (and, worse, hung the whole session — `rmcp` dispatches tool calls
+/// through its own task, off anything that could turn a panic into a clean
+/// response) the moment `doc_id` contained a multi-byte UTF-8 character at an
+/// odd byte position. `hex::decode` operates on raw bytes throughout (never
+/// `str` indexing), so the same input just fails to parse like any other
+/// invalid hex, no panic possible — and it's already in the dependency tree
+/// via `edgestore-repl`'s AWS SDK chain, so this is a strictly safer choice
+/// over a second hand-rolled decoder, not just a shorter one.
 fn hex_decode(s: &str) -> Result<Vec<u8>, McpError> {
-    let bytes = s.as_bytes();
-    if !bytes.len().is_multiple_of(2) {
-        return Err(McpError::invalid_params(
-            "doc_id must be an even-length hex string",
-            None,
-        ));
-    }
-    bytes
-        .chunks(2)
-        .map(|pair| {
-            let hi = (pair[0] as char).to_digit(16);
-            let lo = (pair[1] as char).to_digit(16);
-            match (hi, lo) {
-                (Some(hi), Some(lo)) => Ok(((hi as u8) << 4) | lo as u8),
-                _ => Err(McpError::invalid_params("doc_id is not valid hex", None)),
-            }
-        })
-        .collect()
+    hex::decode(s).map_err(|_| McpError::invalid_params("doc_id is not valid hex", None))
 }
 
 fn internal_err(e: impl std::fmt::Display) -> McpError {
@@ -313,7 +293,7 @@ impl PierreMcpServer {
             .map(|(key, record, score)| {
                 let (message, truncated) = bound_message(&record.message);
                 LogHit {
-                    doc_id: key.map(|k| hex_encode(&k)).unwrap_or_default(),
+                    doc_id: key.map(hex::encode).unwrap_or_default(),
                     timestamp_ns: record.timestamp_ns,
                     message,
                     truncated,
@@ -383,7 +363,7 @@ impl PierreMcpServer {
         let lines: Vec<ContextLine> = same_stream[start..end]
             .iter()
             .map(|(k, r)| ContextLine {
-                doc_id: hex_encode(k),
+                doc_id: hex::encode(k),
                 timestamp_ns: r.timestamp_ns,
                 message: r.message.clone(),
                 is_anchor: *k == key,
