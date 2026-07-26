@@ -274,3 +274,15 @@ A second pass, scoped to the same "not in production yet" mandate but focused on
 **Fixed on request — `otlpproto.rs`'s `time_unix_nano as i64` cast.** Flagged as a soft finding (a same-width cast, never panics/UB, unlike the arithmetic-overflow bugs fixed above) but the user asked for it anyway: a wire `u64` past `i64::MAX` now falls through the existing time/observed-time/now fallback chain via `i64::try_from(...).ok()` instead of silently reinterpreting as a negative timestamp. Two new tests cover single- and both-fields-out-of-range.
 
 **Status: done — full suite/clippy/fmt clean (42 lib tests, up from 38 before this pass).**
+
+## `/ds-security-review` pass (2026-07-26)
+
+Full `src/` scope (no branch diff exists — everything is on `main`). Ruled out clean: no `unsafe` anywhere, no command-injection surface, no regex (no ReDoS), `serde_json`'s recursion limit is on by default so untrusted NDJSON in `es_bulk.rs` can't stack-overflow the parser, every ingest surface already has an explicit size cap, auth now gates every HTTP/gRPC surface (fixed in the hardening pass above).
+
+**Fixed — internal error strings leaked to callers.** `query_api.rs` (4 sites), `es_bulk.rs`, `loki.rs`, `otlp.rs`'s gRPC path, and `mcp.rs`'s shared `internal_err` helper all returned a raw `anyhow`/`Status` error's `Display` text directly in the HTTP/gRPC/MCP response body. `anyhow` chains can carry I/O error text (potentially including `data_dir` filesystem paths) or internal engine error strings. Fixed: each site now logs the real error server-side (`log::warn!`) and returns a fixed `"internal error"` to the caller. Left one message intentionally verbatim — `search_handler`'s "narrow the time range" bail from `textindex::search`'s bucket-count guard, which is client-fixable input guidance, not internal detail.
+
+**Fixed — `RUNBOOK.md` never mentioned TLS.** The runbook's own worked example (step 4) points a real collector's `bearer_token` config at a plain `http://` Pierre URL, and step 3 explicitly covers the non-co-located (`0.0.0.0`) case where that traffic crosses a real network segment — the original "Path to first real-world exposure" decision (above, 2026-07-12) reasoned through auth but never through transport confidentiality, so the token was documented to travel in cleartext on exactly the network ("production or QA... not your own machine") where an attacker is realistically present. Added a note after the auth-token step: put a TLS-terminating reverse proxy in front of Pierre for anything other than loopback-to-loopback.
+
+**Not fixed — bearer-token comparison isn't constant-time** (`auth.rs`, `HashSet::contains`). Theoretical timing side channel, heavily dampened by hashing before lookup, and the auth model is already documented as non-adversarial-grade for small/trusted-network deployments. Noted for completeness, not worth the change.
+
+**Status: done — full suite/clippy/fmt clean, no test asserted on the removed raw error text.**

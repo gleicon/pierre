@@ -54,7 +54,8 @@ fn hex_decode(s: &str) -> Result<Vec<u8>, McpError> {
 }
 
 fn internal_err(e: impl std::fmt::Display) -> McpError {
-    McpError::internal_error(e.to_string(), None)
+    log::warn!("mcp tool call failed: {e}");
+    McpError::internal_error("internal error", None)
 }
 
 fn json_result<T: Serialize>(value: &T) -> Result<CallToolResult, McpError> {

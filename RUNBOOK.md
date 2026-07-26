@@ -27,6 +27,13 @@ openssl rand -hex 32
 
 Keep this value; it goes in `auth_tokens` below and in the collector's push config.
 
+**Pierre has no TLS of its own** — every listener is plain HTTP/gRPC. If the collector and
+Pierre aren't co-located (see step 3's `0.0.0.0` note), the bearer token above travels the
+network in cleartext; anyone with a position on that network segment can read it off the wire
+and reuse it. Put a TLS-terminating reverse proxy (nginx, Caddy, Envoy) in front of Pierre for
+any deployment that isn't `127.0.0.1`-to-`127.0.0.1`, and point the collector at the proxy's
+`https://` endpoint instead of Pierre directly.
+
 ## 3. Write `pierre.toml` on the VM
 
 Copy the repo's `pierre.toml` as a starting point and change:

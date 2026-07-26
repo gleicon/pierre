@@ -149,7 +149,13 @@ async fn bulk_handler(
             state.textindex.as_ref(),
         )
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            log::warn!("bulk_handler: ingest::commit failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal error".to_string(),
+            )
+        })?;
         state.stats.record_commit();
 
         items.push(BulkItemResult {

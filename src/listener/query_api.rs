@@ -84,7 +84,13 @@ async fn logs_handler(
     query::select(&state.storage, start_ns, end_ns, &filters)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(|e| {
+            log::warn!("logs_handler: query::select failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal error".to_string(),
+            )
+        })
 }
 
 #[derive(Debug, Serialize)]
@@ -122,22 +128,29 @@ async fn search_handler(
     .await
     .map_err(|e| {
         // "narrow the time range" is textindex::search's bucket-count-limit bail
-        // message — a client-fixable input error, not a server fault.
-        let status = if e.to_string().contains("narrow the time range") {
-            StatusCode::BAD_REQUEST
+        // message — a client-fixable input error, safe and useful to return
+        // verbatim, unlike a genuine server-side fault below.
+        let text = e.to_string();
+        if text.contains("narrow the time range") {
+            (StatusCode::BAD_REQUEST, text)
         } else {
-            StatusCode::INTERNAL_SERVER_ERROR
-        };
-        (status, e.to_string())
+            log::warn!("search_handler: textindex::search failed: {text}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal error".to_string(),
+            )
+        }
     })?;
 
     let mut hits = Vec::with_capacity(results.len());
     for r in results {
-        let record = state
-            .storage
-            .get_record(&r.doc_id)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let record = state.storage.get_record(&r.doc_id).await.map_err(|e| {
+            log::warn!("search_handler: get_record failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal error".to_string(),
+            )
+        })?;
         hits.push(SearchHit {
             record,
             score: r.score,
@@ -169,7 +182,13 @@ async fn aggregate_handler(
 
     let mut sketch = aggregate::merged_sketch(&state.storage, field, start_ns, end_ns)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| {
+            log::warn!("aggregate_handler: merged_sketch failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal error".to_string(),
+            )
+        })?
         .ok_or((
             StatusCode::NOT_FOUND,
             format!("no rollup data for field {field:?} in range"),

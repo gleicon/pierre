@@ -189,7 +189,13 @@ async fn query_range_handler(
 
     let records = crate::query::select(&state.storage, start_ns, end_ns, &parsed.selector)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            log::warn!("query_range_handler: query::select failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal error".to_string(),
+            )
+        })?;
 
     let matching = records.into_iter().filter(|r| {
         parsed

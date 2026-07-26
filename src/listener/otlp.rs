@@ -72,7 +72,10 @@ impl LogsService for GrpcLogsService {
             Ok(_) => Ok(Response::new(ExportLogsServiceResponse {
                 partial_success: None,
             })),
-            Err(e) => Err(Status::internal(e.to_string())),
+            Err(e) => {
+                log::warn!("GrpcLogsService::export: ingest failed: {e}");
+                Err(Status::internal("internal error"))
+            }
         }
     }
 }
