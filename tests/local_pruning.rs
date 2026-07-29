@@ -28,7 +28,7 @@ async fn backup_worker_prunes_local_segment_after_grace_period_and_data_stays_qu
         message: "prune me after archiving".to_string(),
         fields,
     };
-    pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None)
+    pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None, None)
         .await
         .unwrap();
 

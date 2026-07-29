@@ -215,7 +215,7 @@ async fn unconfigured_fields_are_dropped_at_ingest() {
         message: "hello world".to_string(),
         fields,
     };
-    pierre::ingest::commit(&storage, wire, &allowed_fields, None, None)
+    pierre::ingest::commit(&storage, wire, &allowed_fields, None, None, None)
         .await
         .unwrap();
 

@@ -52,7 +52,7 @@ async fn exact_rollup_persists_minute_bucket_and_does_not_block_ingest() {
             message: "x".to_string(),
             fields,
         };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None, None)
             .await
             .unwrap();
     }
@@ -126,7 +126,7 @@ async fn minute_buckets_merge_into_hour_tier_algebraically() {
             message: "x".to_string(),
             fields,
         };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None, None)
             .await
             .unwrap();
         tokio::time::sleep(minute_duration).await;
@@ -175,7 +175,7 @@ async fn topk_rollup_survives_noise_through_the_full_ingest_path() {
             message: "x".to_string(),
             fields,
         };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None, None)
             .await
             .unwrap();
     }
@@ -187,7 +187,7 @@ async fn topk_rollup_survives_noise_through_the_full_ingest_path() {
             message: "x".to_string(),
             fields,
         };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None, None)
             .await
             .unwrap();
     }
@@ -228,7 +228,7 @@ async fn ddsketch_rollup_estimates_p99_through_the_full_ingest_path() {
             message: "x".to_string(),
             fields,
         };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None, None)
             .await
             .unwrap();
     }
@@ -289,7 +289,7 @@ async fn hll_rollup_estimates_distinct_values_through_the_full_ingest_path() {
                 message: "x".to_string(),
                 fields,
             };
-            pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+            pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None, None)
                 .await
                 .unwrap();
         }

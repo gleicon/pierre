@@ -22,7 +22,7 @@ async fn ingest(storage: &Storage, ts: i64, message: &str, fields: BTreeMap<Stri
         fields,
     };
     let allowed: Vec<String> = wire.fields.keys().cloned().collect();
-    pierre::ingest::commit(storage, wire, &allowed, None, None)
+    pierre::ingest::commit(storage, wire, &allowed, None, None, None)
         .await
         .unwrap();
 }

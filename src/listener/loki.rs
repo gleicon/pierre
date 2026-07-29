@@ -143,6 +143,7 @@ async fn push_handler(
                 &state.allowed_fields,
                 state.rollup.as_ref(),
                 state.textindex.as_ref(),
+                None,
             )
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

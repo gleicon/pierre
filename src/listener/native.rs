@@ -143,7 +143,7 @@ async fn process_batch(
 ) -> anyhow::Result<()> {
     let batch: Vec<WireRecord> = serde_json::from_slice(payload)?;
     for wire in batch {
-        crate::ingest::commit(storage, wire, allowed_fields, rollup, textindex).await?;
+        crate::ingest::commit(storage, wire, allowed_fields, rollup, textindex, None).await?;
         stats.record_commit();
     }
     Ok(())

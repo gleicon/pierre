@@ -142,7 +142,7 @@ async fn search_logs_full_text_query_finds_indexed_message() {
         message: "checkout request timed out after 30s".to_string(),
         fields: BTreeMap::new(),
     };
-    pierre::ingest::commit(&storage, wire, &fields, None, Some(&textindex))
+    pierre::ingest::commit(&storage, wire, &fields, None, Some(&textindex), None)
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_millis(150)).await;
@@ -334,7 +334,7 @@ async fn aggregate_count_uses_rollup_data() {
             message: "x".to_string(),
             fields: BTreeMap::from([("level".to_string(), level.to_string())]),
         };
-        pierre::ingest::commit(&storage, wire, &fields, Some(&rollup), None)
+        pierre::ingest::commit(&storage, wire, &fields, Some(&rollup), None, None)
             .await
             .unwrap();
     }

@@ -44,6 +44,7 @@ impl Ingester {
                 &self.allowed_fields,
                 self.rollup.as_ref(),
                 self.textindex.as_ref(),
+                None,
             )
             .await?;
             self.stats.record_commit();

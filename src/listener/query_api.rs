@@ -9,12 +9,13 @@ use axum::{Json, Router};
 use serde::Serialize;
 
 use crate::auth::AuthTokens;
+use crate::config::EmbeddingConfig;
 use crate::listener::parse_range;
 use crate::rollup::RollupHandle;
 use crate::stats::IngestStats;
 use crate::storage::Storage;
 use crate::textindex::TextIndexHandle;
-use crate::{aggregate, query, textindex};
+use crate::{aggregate, embedding, query, textindex};
 
 #[derive(Clone)]
 struct AppState {
@@ -23,6 +24,7 @@ struct AppState {
     stats: IngestStats,
     rollup: Option<RollupHandle>,
     textindex_handle: Option<TextIndexHandle>,
+    embedding_config: Option<EmbeddingConfig>,
 }
 
 pub fn router(
@@ -32,6 +34,7 @@ pub fn router(
     stats: IngestStats,
     rollup: Option<RollupHandle>,
     textindex_handle: Option<TextIndexHandle>,
+    embedding_config: Option<EmbeddingConfig>,
 ) -> Router {
     let router = Router::new()
         .route("/query/logs", get(logs_handler))
@@ -44,6 +47,7 @@ pub fn router(
             stats,
             rollup,
             textindex_handle,
+            embedding_config,
         });
     crate::auth::layer(router, auth_tokens)
 }
@@ -56,6 +60,7 @@ pub async fn serve(
     stats: IngestStats,
     rollup: Option<RollupHandle>,
     textindex_handle: Option<TextIndexHandle>,
+    embedding_config: Option<EmbeddingConfig>,
 ) -> anyhow::Result<()> {
     let app = router(
         storage,
@@ -64,6 +69,7 @@ pub async fn serve(
         stats,
         rollup,
         textindex_handle,
+        embedding_config,
     );
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
@@ -99,9 +105,11 @@ struct SearchHit {
     score: f32,
 }
 
-/// `GET /query/search?start=<ns>&end=<ns>&q=<text>&k=<n>` — BM25 line-filter (FR-14).
-/// Resolves each hit's `doc_id` back to the full record (`record: null` if it was
-/// somehow expired/removed between the search and the lookup — rare, not an error).
+/// `GET /query/search?start=<ns>&end=<ns>&q=<text>&k=<n>[&mode=hybrid]`
+///
+/// Default `mode=text` (BM25 only, FR-14). `mode=hybrid` runs BM25 + vector
+/// search in parallel, fuses via RRF (k=60), and returns the merged ranking.
+/// Hybrid falls back to text-only if embedding is not configured.
 async fn search_handler(
     State(state): State<AppState>,
     Query(params): Query<BTreeMap<String, String>>,
@@ -115,21 +123,32 @@ async fn search_handler(
         .map(|s| s.parse())
         .transpose()
         .map_err(|_| (StatusCode::BAD_REQUEST, "invalid `k` param".to_string()))?
-        .unwrap_or(10);
+        .unwrap_or(10)
+        .min(1000);
+    let hybrid = params.get("mode").map(String::as_str) == Some("hybrid");
 
-    let results = textindex::search(
+    // Text search (always) and query embedding (only for hybrid) run in parallel.
+    let text_fut = textindex::search(
         &state.storage,
         start_ns,
         end_ns,
         state.textindex_bucket_duration,
         query_text,
-        k,
-    )
-    .await
-    .map_err(|e| {
-        // "narrow the time range" is textindex::search's bucket-count-limit bail
-        // message — a client-fixable input error, safe and useful to return
-        // verbatim, unlike a genuine server-side fault below.
+        k * 2, // fetch more candidates for RRF
+    );
+
+    let embed_fut = async {
+        if hybrid {
+            if let Some(cfg) = &state.embedding_config {
+                return embedding::embed_query(cfg, query_text).await;
+            }
+        }
+        None
+    };
+
+    let (text_results, query_embedding) = tokio::join!(text_fut, embed_fut);
+
+    let text_results = text_results.map_err(|e| {
         let text = e.to_string();
         if text.contains("narrow the time range") {
             (StatusCode::BAD_REQUEST, text)
@@ -142,21 +161,75 @@ async fn search_handler(
         }
     })?;
 
-    let mut hits = Vec::with_capacity(results.len());
-    for r in results {
-        let record = state.storage.get_record(&r.doc_id).await.map_err(|e| {
+    // If hybrid and we have an embedding, run vector search and fuse.
+    let ranked_keys: Vec<(Vec<u8>, f32)> = if hybrid {
+        if let (Some(cfg), Some(qdata)) = (&state.embedding_config, query_embedding) {
+            let vec_results = state
+                .storage
+                .vector_search(cfg.dims, qdata, k * 2)
+                .await
+                .map_err(|e| {
+                    log::warn!("search_handler: vector_search failed: {e}");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "internal error".to_string(),
+                    )
+                })?;
+            rrf_fuse(&text_results, &vec_results, k)
+        } else {
+            // Embedding disabled or query embedding failed — fall back to text.
+            text_results
+                .iter()
+                .map(|r| (r.doc_id.clone(), r.score))
+                .take(k)
+                .collect()
+        }
+    } else {
+        text_results
+            .iter()
+            .map(|r| (r.doc_id.clone(), r.score))
+            .take(k)
+            .collect()
+    };
+
+    let mut hits = Vec::with_capacity(ranked_keys.len());
+    for (key, score) in ranked_keys {
+        let record = state.storage.get_record(&key).await.map_err(|e| {
             log::warn!("search_handler: get_record failed: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal error".to_string(),
             )
         })?;
-        hits.push(SearchHit {
-            record,
-            score: r.score,
-        });
+        hits.push(SearchHit { record, score });
     }
     Ok(Json(hits))
+}
+
+/// Reciprocal Rank Fusion of BM25 and vector results, returning top-k.
+/// `score(doc) = Σ 1/(60 + rank)` summed over both lists.
+fn rrf_fuse(
+    text: &[edgestore::TextSearchResult],
+    vector: &[(Vec<u8>, f32)],
+    k: usize,
+) -> Vec<(Vec<u8>, f32)> {
+    use std::collections::HashMap;
+    const RRF_K: f32 = 60.0;
+
+    let mut scores: HashMap<&[u8], f32> = HashMap::new();
+
+    for (rank, r) in text.iter().enumerate() {
+        *scores.entry(r.doc_id.as_slice()).or_default() += 1.0 / (RRF_K + rank as f32 + 1.0);
+    }
+    for (rank, (key, _dist)) in vector.iter().enumerate() {
+        *scores.entry(key.as_slice()).or_default() += 1.0 / (RRF_K + rank as f32 + 1.0);
+    }
+
+    let mut ranked: Vec<(Vec<u8>, f32)> =
+        scores.into_iter().map(|(k, s)| (k.to_vec(), s)).collect();
+    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    ranked.truncate(k);
+    ranked
 }
 
 #[derive(Debug, Serialize)]

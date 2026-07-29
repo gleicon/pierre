@@ -164,7 +164,9 @@ async fn handle_line(
         return;
     }
     let wire = parse_rfc5424(line);
-    if let Err(e) = crate::ingest::commit(storage, wire, allowed_fields, rollup, textindex).await {
+    if let Err(e) =
+        crate::ingest::commit(storage, wire, allowed_fields, rollup, textindex, None).await
+    {
         log::warn!("syslog message rejected: {e}");
         return;
     }

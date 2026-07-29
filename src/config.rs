@@ -4,6 +4,52 @@ use std::path::Path;
 use crate::backup::BackupConfig;
 use crate::rollup::RollupKind;
 
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum EmbeddingBackend {
+    Disabled,
+    Remote,
+}
+
+impl Default for EmbeddingBackend {
+    fn default() -> Self {
+        EmbeddingBackend::Disabled
+    }
+}
+
+/// Configuration for the embedding pipeline (M3 hybrid search).
+/// Default `backend = disabled` means no embeddings — all existing deployments
+/// unaffected. `remote` calls an OpenAI-compatible HTTP endpoint (Ollama,
+/// OpenAI, Cohere, etc.) from a bounded background worker; the ingest path
+/// is never blocked.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct EmbeddingConfig {
+    pub backend: EmbeddingBackend,
+    pub remote_url: String,
+    pub remote_model: String,
+    /// Expected embedding dimensions — must match the model's output.
+    /// 384 = multilingual-e5-small / nomic-embed-text default.
+    pub dims: u16,
+    /// Bounded channel depth. Ingest drops embedding requests silently when full.
+    pub queue_depth: usize,
+    /// Worker batches up to this many texts before calling the backend.
+    pub batch_size: usize,
+}
+
+impl Default for EmbeddingConfig {
+    fn default() -> Self {
+        EmbeddingConfig {
+            backend: EmbeddingBackend::Disabled,
+            remote_url: "http://localhost:11434/v1/embeddings".to_string(),
+            remote_model: "nomic-embed-text".to_string(),
+            dims: 384,
+            queue_depth: 2048,
+            batch_size: 32,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RollupDef {
     pub field: String,
@@ -96,6 +142,9 @@ pub struct PierreConfig {
     /// doc promises. Do not enable this expecting durable disk savings until the
     /// upstream WAL/strip interaction is fixed.
     pub strip_text_index_after_archive: bool,
+    /// Embedding pipeline config (M3 hybrid search). Default `backend = disabled`
+    /// means no embeddings — safe to omit from pierre.toml entirely.
+    pub embedding: EmbeddingConfig,
 }
 
 impl Default for PierreConfig {
@@ -131,6 +180,7 @@ impl Default for PierreConfig {
             local_retention_secs: None,
             local_prune_interval_secs: 300,
             strip_text_index_after_archive: false,
+            embedding: EmbeddingConfig::default(),
             fields: vec![
                 "level".to_string(),
                 "status".to_string(),

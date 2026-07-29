@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use edgestore::types::SegmentMeta;
-use edgestore::{EdgestoreConfig, RemoteStore, TextSearchResult};
+use edgestore::{EdgestoreConfig, Metric, RemoteStore, TextSearchResult, VectorEngine};
 use edgestore_repl::FilesystemRemoteStore;
 use edgestore_tier::ArchivedSegment;
 use edgestore_tokio::AsyncTieredEngine;
@@ -18,10 +19,19 @@ const LOGS_NS: &[u8] = b"logs";
 /// `open()` defaults to a local-disk archive under `{data_dir}/_archive`, so every
 /// deployment gets real archival with no external dependency; `open_with_remote`
 /// lets the caller (main.rs, per `pierre.toml`) swap in S3 instead.
+///
+/// `vector_engine` is a separate plain `edgestore::Engine` in `{data_dir}/_vectors/`
+/// for embedding storage (M3). Separate from the main engine because
+/// `edgestore-tokio::AsyncTieredEngine` has no async wrappers for vector ops yet —
+/// accessed only via `spawn_blocking`, same pattern as the async wrappers in
+/// `edgestore-tokio`. Always opened (empty, no overhead) when embedding is disabled.
 pub struct Storage {
     engine: AsyncTieredEngine,
+    vector_engine: Arc<Mutex<edgestore::Engine>>,
     data_dir: PathBuf,
 }
+
+const VECTOR_NS: &[u8] = b"logs";
 
 /// edgestore's own default (`EdgestoreConfig::new`) — kept as a named constant so
 /// `open`'s local-disk-archive default and `open_with_cohort_window`'s explicit
@@ -75,8 +85,18 @@ impl Storage {
             strip_text_index_after_archive,
         )
         .await?;
+
+        let vectors_dir = data_dir.join("_vectors");
+        std::fs::create_dir_all(&vectors_dir)?;
+        let vector_engine = tokio::task::spawn_blocking(move || {
+            edgestore::Engine::open(EdgestoreConfig::new(&vectors_dir))
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("spawn_blocking failed: {e}"))??;
+
         Ok(Storage {
             engine,
+            vector_engine: Arc::new(Mutex::new(vector_engine)),
             data_dir: data_dir.to_path_buf(),
         })
     }
@@ -272,6 +292,52 @@ impl Storage {
     /// interval — see `backup::spawn`.
     pub fn flush_notify(&self) -> std::sync::Arc<tokio::sync::Notify> {
         self.engine.flush_notify()
+    }
+
+    /// Stores an F32 embedding for a log record key (M3 hybrid search).
+    /// Key is the same 16-byte key returned by `commit()` — 1:1 mapping between
+    /// log records and their vectors. Runs in `spawn_blocking`; never blocks the
+    /// async ingest path (the embedding worker calls this, not the hot path itself).
+    pub async fn vector_put(&self, key: &[u8], dims: u16, data: Vec<u8>) -> anyhow::Result<()> {
+        let key = key.to_vec();
+        let engine = self.vector_engine.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut e = engine
+                .lock()
+                .map_err(|_| anyhow::anyhow!("vector engine lock poisoned"))?;
+            e.vector_put(VECTOR_NS, &key, dims, edgestore::Dtype::F32, &data)
+                .map_err(|e| anyhow::anyhow!("vector_put: {e}"))?;
+            Ok::<_, anyhow::Error>(())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("spawn_blocking failed: {e}"))?
+    }
+
+    /// Top-k nearest-vector search (M3 hybrid search). Returns `(log_record_key, distance)`
+    /// pairs sorted by ascending distance (lower = closer). Cosine distance.
+    /// Returns empty vec if no vectors stored yet (embedding disabled or no records embedded).
+    pub async fn vector_search(
+        &self,
+        query_dims: u16,
+        query_data: Vec<u8>,
+        k: usize,
+    ) -> anyhow::Result<Vec<(Vec<u8>, f32)>> {
+        let engine = self.vector_engine.clone();
+        tokio::task::spawn_blocking(move || {
+            let e = engine
+                .lock()
+                .map_err(|_| anyhow::anyhow!("vector engine lock poisoned"))?;
+            let query = edgestore::VectorRecord {
+                dims: query_dims,
+                dtype: edgestore::Dtype::F32,
+                data: query_data,
+            };
+            let results = edgestore::vector_search(&e, VECTOR_NS, &query, k, Metric::Cosine)
+                .map_err(|e| anyhow::anyhow!("vector_search: {e}"))?;
+            Ok::<_, anyhow::Error>(results.into_iter().map(|r| (r.key, r.distance)).collect())
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("spawn_blocking failed: {e}"))?
     }
 }
 

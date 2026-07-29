@@ -38,7 +38,7 @@ async fn stripping_is_not_yet_durable_across_a_restart_known_upstream_gap() {
             message: "payment gateway timeout".to_string(),
             fields,
         };
-        pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None)
+        pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None, None)
             .await
             .unwrap();
         storage

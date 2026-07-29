@@ -1,10 +1,10 @@
 [package]
 name = "pierre"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 repository = "https://github.com/gleicon/pierre"
 license = "MIT"
-description = "A single-binary log indexer in Rust: real full-text search, tiered storage, and pre-computed aggregations, built on the edgestore embedded storage engine."
+description = "Single-binary log indexer with MCP server, hybrid semantic search, and ES migration — no JVM, no cluster, no ops."
 readme = "README.md"
 keywords = ["logs", "logging", "search", "observability", "database"]
 categories = ["database-implementations", "command-line-utilities"]
@@ -18,10 +18,10 @@ name = "pierre"
 path = "src/main.rs"
 
 [dependencies]
-edgestore = "1.5.0"
-edgestore-tokio = { version = "1.5.0", features = ["tier"] }
-edgestore-repl = "1.5.0"
-edgestore-tier = "1.5.0"
+edgestore = "1.6.0"
+edgestore-tokio = { version = "1.6.0", features = ["tier"] }
+edgestore-repl = "1.6.0"
+edgestore-tier = "1.6.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-util", "fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -44,6 +44,7 @@ schemars = "1"
 tower-http = { version = "0.6", features = ["catch-panic"] }
 hex = "0.4"
 subtle = "2"
+reqwest = { version = "0.13", features = ["json"] }
 
 [build-dependencies]
 prost-build = "0.14"

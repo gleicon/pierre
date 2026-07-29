@@ -147,6 +147,7 @@ async fn bulk_handler(
             &state.allowed_fields,
             state.rollup.as_ref(),
             state.textindex.as_ref(),
+            None,
         )
         .await
         .map_err(|e| {

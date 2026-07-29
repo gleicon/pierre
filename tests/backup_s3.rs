@@ -44,7 +44,7 @@ async fn warm_segment_is_backed_up_to_s3() {
         message: "hello from pierre".to_string(),
         fields,
     };
-    pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None)
+    pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None, None)
         .await
         .unwrap();
 

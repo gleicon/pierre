@@ -30,7 +30,7 @@ async fn warm_segment_is_backed_up_to_filesystem_remote_store() {
         message: "hello".to_string(),
         fields,
     };
-    pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None)
+    pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None, None)
         .await
         .unwrap();
 
@@ -98,7 +98,7 @@ async fn segment_is_archived_immediately_on_flush_not_only_on_archive_interval()
         message: "hello".to_string(),
         fields,
     };
-    pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None)
+    pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None, None)
         .await
         .unwrap();
 

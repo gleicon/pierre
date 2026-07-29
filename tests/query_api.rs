@@ -29,7 +29,7 @@ async fn logs_endpoint_answers_selector_and_time_range() {
         message: "boom".to_string(),
         fields,
     };
-    pierre::ingest::commit(&storage, wire, &allowed_fields, None, None)
+    pierre::ingest::commit(&storage, wire, &allowed_fields, None, None, None)
         .await
         .unwrap();
 
@@ -38,6 +38,7 @@ async fn logs_endpoint_answers_selector_and_time_range() {
         Duration::from_secs(3600),
         pierre::auth::AuthTokens::new(vec![]),
         pierre::stats::IngestStats::default(),
+        None,
         None,
         None,
     );
@@ -74,6 +75,7 @@ async fn logs_endpoint_rejects_missing_range_params() {
         pierre::stats::IngestStats::default(),
         None,
         None,
+        None,
     );
 
     let req = Request::builder()
@@ -101,7 +103,7 @@ async fn search_endpoint_returns_full_record_for_each_hit() {
         message: "payment gateway timeout detected".to_string(),
         fields: BTreeMap::new(),
     };
-    pierre::ingest::commit(&storage, wire, &[], None, Some(&textindex))
+    pierre::ingest::commit(&storage, wire, &[], None, Some(&textindex), None)
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_millis(150)).await;
@@ -111,6 +113,7 @@ async fn search_endpoint_returns_full_record_for_each_hit() {
         bucket_duration,
         pierre::auth::AuthTokens::new(vec![]),
         pierre::stats::IngestStats::default(),
+        None,
         None,
         None,
     );
@@ -155,7 +158,7 @@ async fn aggregate_endpoint_serves_exact_count_from_rollup_sketch() {
             message: "x".to_string(),
             fields,
         };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None)
+        pierre::ingest::commit(&storage, wire, &allowed_fields, Some(&rollup), None, None)
             .await
             .unwrap();
     }
@@ -172,6 +175,7 @@ async fn aggregate_endpoint_serves_exact_count_from_rollup_sketch() {
         Duration::from_secs(3600),
         pierre::auth::AuthTokens::new(vec![]),
         pierre::stats::IngestStats::default(),
+        None,
         None,
         None,
     );
@@ -203,6 +207,7 @@ async fn aggregate_endpoint_404s_when_no_rollup_data_in_range() {
         Duration::from_secs(3600),
         pierre::auth::AuthTokens::new(vec![]),
         pierre::stats::IngestStats::default(),
+        None,
         None,
         None,
     );
@@ -245,6 +250,7 @@ async fn metrics_endpoint_reports_real_counters() {
         pierre::auth::AuthTokens::new(vec![]),
         stats,
         Some(rollup),
+        None,
         None,
     );
 

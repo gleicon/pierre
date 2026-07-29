@@ -21,9 +21,16 @@ async fn indexed_line_is_searchable_after_the_indexer_catches_up() {
         message: "request 500 failed after 42ms".to_string(),
         fields: BTreeMap::new(),
     };
-    pierre::ingest::commit(&storage, wire, &allowed_fields, None, Some(&textindex))
-        .await
-        .unwrap();
+    pierre::ingest::commit(
+        &storage,
+        wire,
+        &allowed_fields,
+        None,
+        Some(&textindex),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Indexing is async — give the worker a moment to process the sample.
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -87,9 +94,16 @@ async fn search_merges_results_across_time_buckets() {
             message: format!("marker-line-{i} needle"),
             fields: BTreeMap::new(),
         };
-        pierre::ingest::commit(&storage, wire, &allowed_fields, None, Some(&textindex))
-            .await
-            .unwrap();
+        pierre::ingest::commit(
+            &storage,
+            wire,
+            &allowed_fields,
+            None,
+            Some(&textindex),
+            None,
+        )
+        .await
+        .unwrap();
     }
 
     tokio::time::sleep(Duration::from_millis(150)).await;
@@ -129,9 +143,16 @@ async fn crash_after_partial_flush_still_leaves_both_documents_searchable() {
             message: "zzzalpha flushed before crash".to_string(),
             fields: BTreeMap::new(),
         };
-        pierre::ingest::commit(&storage, doc1, &allowed_fields, None, Some(&textindex))
-            .await
-            .unwrap();
+        pierre::ingest::commit(
+            &storage,
+            doc1,
+            &allowed_fields,
+            None,
+            Some(&textindex),
+            None,
+        )
+        .await
+        .unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await; // let the worker index it
         storage.flush().await.unwrap(); // persist the sidecar with doc1 only
 
@@ -140,9 +161,16 @@ async fn crash_after_partial_flush_still_leaves_both_documents_searchable() {
             message: "zzzbeta indexed after last flush".to_string(),
             fields: BTreeMap::new(),
         };
-        pierre::ingest::commit(&storage, doc2, &allowed_fields, None, Some(&textindex))
-            .await
-            .unwrap();
+        pierre::ingest::commit(
+            &storage,
+            doc2,
+            &allowed_fields,
+            None,
+            Some(&textindex),
+            None,
+        )
+        .await
+        .unwrap();
         tokio::time::sleep(Duration::from_millis(100)).await; // in-memory only — never flushed
 
         // Simulate a crash: kill the background worker (it holds its own Arc<Storage>

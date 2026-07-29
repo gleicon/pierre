@@ -19,6 +19,7 @@ async fn no_configured_tokens_means_auth_is_off() {
         pierre::stats::IngestStats::default(),
         None,
         None,
+        None,
     );
 
     let req = Request::builder()
@@ -44,6 +45,7 @@ async fn configured_tokens_reject_missing_authorization_header() {
         pierre::stats::IngestStats::default(),
         None,
         None,
+        None,
     );
 
     let req = Request::builder()
@@ -63,6 +65,7 @@ async fn configured_tokens_reject_wrong_token() {
         Duration::from_secs(3600),
         AuthTokens::new(vec!["secret-token".to_string()]),
         pierre::stats::IngestStats::default(),
+        None,
         None,
         None,
     );
@@ -85,6 +88,7 @@ async fn configured_tokens_accept_the_correct_token() {
         Duration::from_secs(3600),
         AuthTokens::new(vec!["secret-token".to_string()]),
         pierre::stats::IngestStats::default(),
+        None,
         None,
         None,
     );

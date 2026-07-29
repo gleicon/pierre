@@ -29,7 +29,7 @@ async fn plain_range_reads_through_to_archived_only_data() {
             message: "archived-only record".to_string(),
             fields,
         };
-        pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None)
+        pierre::ingest::commit(&storage, wire, &["level".to_string()], None, None, None)
             .await
             .unwrap();
 

@@ -288,3 +288,78 @@ Full `src/` scope (no branch diff exists — everything is on `main`). Ruled out
 **Status: done — full suite/clippy/fmt clean, no test asserted on the removed raw error text.**
 
 **Superseded (same day, on request):** fixed anyway. `AuthTokens::is_valid` now compares the provided token against *every* configured token via `[u8]::ct_eq` (`subtle`, already resolved in the dependency tree via the RustCrypto chain — zero net new compiled crate), never short-circuiting on a match, instead of `HashSet::contains`. A length mismatch still short-circuits (token length isn't the secret, only content is — standard practice, not a shortcut back to the leak this closes). Verified: a new unit test covers the full functional matrix (auth off, right token among several, wrong token, prefix/suffix near-misses, empty token, missing header) and a real running binary confirms the right token gets 200 and the wrong one gets 401.
+
+## Release plan and M3 design — `/ds-grill-me` session (2026-07-26)
+
+Full planning session on "what is still missing since the second PRD, how to position and release Pierre."
+
+### Release scope and version
+
+**Decision:** Version bump to `1.0.0` + finish M3 (Block B hybrid semantic search) and all subsequent phases now, in this session.
+
+**Why:** Production hardening is done (security review, auth, crash fixes, constant-time auth). Pre-M3 Pierre already meets a production-readiness bar; 0.x signals "don't trust this yet" to any evaluator. M3 closes PRD v0.2. Calling it 1.0 is honest.
+
+### edgestore dependency bump to 1.6.0
+
+**Decision:** Bump all four `edgestore*` deps from `1.5.0` to `1.6.0` immediately. Verified: all published on crates.io at 1.6.0, `cargo check` clean with zero code changes.
+
+**Why:** M3 needs 1.6.0's `VectorPage`, `vector_page()`, and rewritten async `vector_search` (HNSW + flat scan branches). The 1.5→1.6 bump was purely additive — no existing call sites changed.
+
+### M3 vector storage backend
+
+**Decision:** Use edgestore 1.6.0's real async vector APIs (`vector_page`, `vector_search`) — not a hand-rolled store, not a separate vector DB. Vector storage is edgestore's job; embedding generation is Pierre's.
+
+**Why:** edgestore 1.6.0 ships exactly what M3 needs: cooperative async vector search with HNSW branch (fast, write-lock, spawn_blocking) and flat scan branch (paged, read-lock, yield_now between pages). No new dependency, no new architecture pattern.
+
+### M3 embedding pipeline
+
+**Decision:** Bounded worker channel (same `mpsc` + drop-on-full pattern as `rollup` and `textindex` workers). Ingest path sends to the channel via `try_send` — non-blocking, drop on `Err(Full)`, counter in `/metrics`. Worker handles embedding asynchronously; embedding failure or backpressure never touches the write path. Two configurable backends:
+
+- `local` — in-process model via `fastembed-rs` (no port, no network, `spawn_blocking` for inference). Behind `--features embedding-local` cargo feature because `fastembed-rs` pulls in `onnxruntime` native dep. Like Vectoria.
+- `remote` — HTTP to any OpenAI-compatible endpoint (Ollama, OpenAI, Cohere, LM Studio).
+- `Disabled` — default; no `[embedding]` section in `pierre.toml` = feature off.
+
+**Why:** Vectoria's lesson is the right prior — inline vectorization on the ingest path saturates it. In-process model for offline/airgapped use, remote API for bigger models or when binary purity matters. No separate process or port for the local model; that would add operational surface with no benefit.
+
+### M3 RRF fusion for hybrid search
+
+**Decision:** Pierre-side, in `query_api.rs` search handler. Calls `textindex::search` and `edgestore::vector_search` in parallel (`tokio::join!`), applies Reciprocal Rank Fusion (`score = Σ 1/(60 + rank)`), returns merged list. Exposed as `?mode=hybrid` on the existing `/query/search` endpoint (not a new endpoint). Falls back to text-only if embedding backend is `Disabled`.
+
+**Why:** Pierre already owns both indices; caller cannot do RRF without two separate round-trips anyway. Mode parameter over new endpoint keeps the API surface smaller.
+
+### Migration CLI (M3 scope)
+
+**Decision:** `pierre migrate --from elasticsearch --url <ES_URL> --index <name>` as a subcommand of the `pierre` binary. Connects directly to ES via scroll API (`reqwest`). Two modes via `--unmapped`:
+
+- `lossy` — drop fields not in Pierre's schema.
+- `preserve` — serialize unmapped fields as JSON into a `_meta` structured field stored alongside normal fields.
+
+Field mapping: `@timestamp` → `timestamp_ns`, `message`/`log.message` → body, configured `fields` → structured fields.
+
+**Why:** Self-contained in the single binary — no separate migration tool to distribute. ES scroll API is straightforward enough to implement directly. The `preserve` mode covers the common "I want to keep everything" case without forcing a schema design decision upfront.
+
+### Block D-1 self-tuning — narrow scope
+
+**Decision:** Reactive channel depth tuning only — feedback loop reads drop counters (`rollup_dropped`, `textindex_dropped` from `/metrics`) and adjusts `mpsc` channel capacity via `Arc<AtomicUsize>`. Own milestone after M3.
+
+**Future options (not D-1):**
+- B. Rollup bucket granularity auto-tuning based on observed ingest rate.
+- C. Adaptive query routing, tiering thresholds, compaction scheduling.
+
+**Why:** Only A has a clear feedback signal already instrumented. B and C require additional observability surface that doesn't exist yet.
+
+### Release positioning
+
+**Decision:** HN/blog post leads with the MCP angle ("the only log store that speaks MCP natively — pipe logs directly to Claude/any LLM tool without an ETL step"). Backed by the anti-complexity angle ("no JVM, no Kafka, no cluster"). README leads with single-binary simplicity ("SQLite for logs").
+
+**Why:** MCP + AI-native observability is the differentiator nobody else in the log store space has right now. Anti-ELK is the secondary pitch that resonates with engineers who resent the Elastic/Grafana operational weight.
+
+### 1.0.0 success gates
+
+**Decision:** These gates mark M3 as shippable:
+
+1. Ingest throughput ≥ 5k rec/s on a commodity VM (4-core, 8GB) with embedding disabled — same baseline as pre-M3.
+2. Hybrid search P99 < 200ms on a 10M-record corpus.
+3. Embedding drop rate < 1% under normal ingest load with local model enabled.
+4. Migration: `pierre migrate --from elasticsearch` completes a 1M-doc index in < 5 min, zero data loss in `preserve` mode (verify via doc count).
+5. MCP tool correctness: existing 7 tests pass + at least 2 new tests covering hybrid search tool.
