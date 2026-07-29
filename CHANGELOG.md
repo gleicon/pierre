@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-29
+
+### Added
+
+- **Hybrid semantic search** (`?mode=hybrid` on `/query/search`): BM25 full-text and
+  vector nearest-neighbor search run in parallel via `tokio::join!`, fused with
+  Reciprocal Rank Fusion (k=60, Cormack 2009). Falls back to text-only when embedding
+  is disabled — all existing queries unaffected.
+- **Embedding pipeline**: background worker with a bounded `mpsc` channel, non-blocking
+  `try_send`, and drop-on-full. Ingest path never waits on embedding. Drop counter
+  exposed in `/metrics` (`pierre_embedding_dropped_total`).
+- **EmbeddingBackend::Remote**: POST to any OpenAI-compatible `/v1/embeddings` endpoint
+  (Ollama, OpenAI, Cohere, etc.). Configured via `[embedding]` in `pierre.toml`.
+  Default `backend = "disabled"` — all prior deployments unaffected with no config
+  change needed.
+- **Vector store**: separate `edgestore::Engine` in `{data_dir}/_vectors/`, accessed
+  via `spawn_blocking` (workaround for missing async wrappers in `edgestore-tokio`
+  1.6.0 — documented in `storage.rs`; bug filed upstream).
+- **ES migration CLI**: `pierre migrate <config> --from elasticsearch --url <url>
+  --index <name> [--unmapped lossy|preserve]`. Bulk-reads via ES scroll API (1000-doc
+  pages). `preserve` mode stores unmapped fields as JSON in a `_meta` field.
+- **edgestore 1.6.0**: bumped from 1.5.0; adds `VectorPage`, `vector_search`, and the
+  `VectorEngine` trait used by the vector store.
+
+### Security
+
+- HTTP clients for embedding and migration built with explicit timeouts (10s / 120s)
+  via `reqwest::ClientBuilder` — prevents worker freeze on slow or hung backends.
+- Shared `reqwest::Client` across embedding batch items — eliminates per-call client
+  allocation and the file-descriptor exhaustion it enables under load.
+- Migration final log line no longer includes the ES URL — prevents HTTP basic-auth
+  credentials from leaking into log sinks.
+- ES index name validated before URL construction — rejects names containing `/`, `?`,
+  `#`, `&`, `\`, or spaces that could escape their path segment.
+- `k` parameter on `/query/search` capped at 1000 — prevents allocation-based DoS
+  and `usize` overflow in the `k * 2` RRF candidate fetch.
+
 ## [0.1.2] - 2026-07-13
 
 ### Fixed
